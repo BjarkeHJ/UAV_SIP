@@ -1,0 +1,51 @@
+
+# ROS build directories
+build/
+devel/
+install/
+
+# CMake files
+CMakeCache.txt
+CMakeFiles/
+CMakeUserPresets.json
+CMakePresets.json
+
+# Python bytecode files
+*.pyc
+*.pyo
+
+# Python cache directories
+__pycache__/
+**/__pycache__/
+
+# Logs
+*.log
+
+# ROS-specific generated files
+*.bak
+*.swp
+*~
+
+# Catkin-specific
+catkin_make/
+catkin_make_isolated/
+catkin_workspace/
+
+# ROS2-specific
+log/
+
+# Other system files
+.DS_Store
+Thumbs.db
+
+# VSCode
+.vscode/
+
+# ISAAC
+isaac_ros_assets/
+
+# Compressed files
+*.tar.gz
+
+# Pointcloud files
+*.pcd
