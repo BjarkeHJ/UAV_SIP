@@ -1,0 +1,6 @@
+[submodule "src/px4_msgs"]
+	path = src/px4_msgs
+	url = https://github.com/PX4/px4_msgs.git
+[submodule "src/Gz-PX4-Environment"]
+	path = src/Gz-PX4-Environment
+	url = https://github.com/BjarkeHJ/Gz-PX4-Environment.git
