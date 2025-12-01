@@ -5,11 +5,60 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
+set(EXEC_NAME lidar_perception_node)
+
 # find dependencies
 find_package(ament_cmake REQUIRED)
-# uncomment the following section in order to fill in
-# further dependencies manually.
-# find_package(<dependency> REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(tf2_ros REQUIRED)
+find_package(pcl_conversions REQUIRED)
+find_package(PCL 1.12 REQUIRED)
+
+include_directories(
+  include
+  ${CMAKE_CURRENT_SOURCE_DIR}/lib
+)
+
+add_executable(
+  ${EXEC_NAME}
+  src/lidar_perception_node.cpp
+)
+
+set(
+  DEPS
+  rclcpp
+  sensor_msgs
+  tf2_ros
+  pcl_conversions
+)
+
+target_include_directories(
+  ${EXEC_NAME} PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+  ${PCL_INCLUDE_DIRS}
+)
+
+target_link_libraries(
+  ${EXEC_NAME}
+  ${PCL_LIBRARIES}
+)
+
+ament_target_dependencies(
+  ${EXEC_NAME}
+  ${DEPS}
+)
+
+install(
+  TARGETS ${EXEC_NAME}
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+install(
+  DIRECTORY include launch 
+  DESTINATION share/${PROJECT_NAME}
+)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
