@@ -1,0 +1,19 @@
+# Goal
+nav_msgs/Path path
+float32 pos_tolerance
+float32 yaw_tolerance
+float32 v_max
+float32 a_max
+uint64 plan_id
+---
+# Result
+bool success
+string message
+uint64 plan_id
+---
+# Feedback
+uint32 active_index
+float32 remaining_distance
+float32 progress   # 0..1
+string state       # "EXECUTING", "HOLDING", "COMPLETED"
+uint64 plan_id
