@@ -37,11 +37,15 @@ private:
     rclcpp_action::CancelResponse handle_cancel(const std::shared_ptr<rclcpp_action::ServerGoalHandle<ExecutePath>> goal_handle);
     void handle_accepted(const std::shared_ptr<rclcpp_action::ServerGoalHandle<ExecutePath>> goal_handle);
 
+    float yaw_step_towards(float yaw_goal, float dist_to_wp, float dt);
+
     geometry_msgs::msg::Quaternion yaw_to_quat(float yaw);
     float quat_to_yaw(geometry_msgs::msg::Quaternion q);
     float wrap_pi(float a);
     float compute_remaining_distance();
     float compute_progress();
+
+    void publish_target();
     void publish_path_vis();
 
     std::shared_ptr<rclcpp_action::ServerGoalHandle<ExecutePath>> active_goal_;
@@ -65,6 +69,9 @@ private:
     float yaw_tol_{5.0f}; // degree
     float yaw_rate_max_{0.5f}; // rad/s
     float stale_timeout_{0.5f};
+
+    float yaw_dist_scale_{1.0f};
+    float yaw_min_factor_{0.2};
 };
 
 #endif

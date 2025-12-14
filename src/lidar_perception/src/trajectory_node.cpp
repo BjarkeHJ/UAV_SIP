@@ -50,17 +50,8 @@ void TrajectoryNode::timer_callback() {
     const float dt_s = static_cast<float>(timer_tick_ms_) / 1000.0f;
     update_reference(dt_s);
     publish_path_vis();
-
-    // Publish command
-    geometry_msgs::msg::PoseStamped target_msg;
-    target_msg.header.frame_id = "odom";
-    target_msg.header.stamp = this->get_clock()->now();
-    target_msg.pose.position.x = pos_ref_.x();
-    target_msg.pose.position.y = pos_ref_.y();
-    target_msg.pose.position.z = pos_ref_.z();
-    target_msg.pose.orientation = yaw_to_quat(yaw_ref_);
-    target_pub_->publish(target_msg);
-
+    publish_target();
+    
     // Provide feedback (Topic stream) to high level planner
     auto feedback = std::make_shared<ExecutePath::Feedback>();
     feedback->active_index = static_cast<uint32_t>(active_index_);
@@ -162,12 +153,9 @@ void TrajectoryNode::update_reference(float dt) {
         pos_ref_ += vel_ref_ * dt;
 
         // Yaw: converge to final waypoint yaw (rate-limited)
-        float yaw_goal = quat_to_yaw(active_path_.poses[N - 1].pose.orientation);
-        float dy = wrap_pi(yaw_goal - yaw_ref_);
-        float max_dy = yaw_rate_max_ * dt;
-        dy = std::clamp(dy, -max_dy, +max_dy);
-        yaw_ref_ = wrap_pi(yaw_ref_ + dy);
-
+        float yaw_goal = -quat_to_yaw(active_path_.poses[N - 1].pose.orientation);
+        float dist_last = (last_p - pos_ref_).norm();
+        yaw_ref_ = yaw_step_towards(yaw_goal, dist_last, dt);
         return;
     }
 
@@ -201,18 +189,9 @@ void TrajectoryNode::update_reference(float dt) {
     // Integrate position
     pos_ref_ += vel_ref_ * dt;
 
-    // Yaw: either face velocity when moving, else follow waypoint yaw
-    float yaw_des;
-    if (vel_ref_.head<2>().norm() > 0.2f) {
-        yaw_des = std::atan2(vel_ref_.y(), vel_ref_.x());
-    } else {
-        yaw_des = quat_to_yaw(tgt_pose.orientation);
-    }
-
-    float dy = wrap_pi(yaw_des - yaw_ref_);
-    float max_dy = yaw_rate_max_ * dt;
-    dy = std::clamp(dy, -max_dy, +max_dy);
-    yaw_ref_ = wrap_pi(yaw_ref_ + dy);
+    // Yaw: ALWAYS follow waypoint yaw (shortest-angle), distance-weighted turning
+    float yaw_goal = -quat_to_yaw(tgt_pose.orientation);
+    yaw_ref_ = yaw_step_towards(yaw_goal, dist, dt);
 
 }
 
@@ -261,6 +240,17 @@ void TrajectoryNode::handle_accepted(const std::shared_ptr<rclcpp_action::Server
     RCLCPP_INFO(get_logger(), "Started executing plan_id=%lu", (unsigned long)path_id_);
 }
 
+float TrajectoryNode::yaw_step_towards(float yaw_goal, float dist_to_wp, float dt) {
+    float f = dist_to_wp / std::max(1e-3f, yaw_dist_scale_);
+    f = std::clamp(f, 0.0f, 1.0f);
+    f = yaw_min_factor_ + (1.0f - yaw_min_factor_) * f;
+
+    float dy = wrap_pi(yaw_goal - yaw_ref_);
+    float max_dy = (yaw_rate_max_ * f) * dt;
+    dy = std::clamp(dy, -max_dy, +max_dy);
+    return wrap_pi(yaw_ref_ + dy);
+}
+
 float TrajectoryNode::compute_remaining_distance() {
     // You would compute from current_ref_ along remaining waypoints or along spline length.
     // Simple placeholder:
@@ -290,8 +280,20 @@ float TrajectoryNode::quat_to_yaw(geometry_msgs::msg::Quaternion q) {
 
 float TrajectoryNode::wrap_pi(float a) {
     while (a > M_PI) a -= 2.f * M_PI;
-    while (a < -M_1_PI) a += 2.f * M_PI;
+    while (a < -M_PI) a += 2.f * M_PI;
     return a;
+}
+
+void TrajectoryNode::publish_target() {
+    // Publish command
+    geometry_msgs::msg::PoseStamped target_msg;
+    target_msg.header.frame_id = "odom";
+    target_msg.header.stamp = this->get_clock()->now();
+    target_msg.pose.position.x = pos_ref_.x();
+    target_msg.pose.position.y = pos_ref_.y();
+    target_msg.pose.position.z = pos_ref_.z();
+    target_msg.pose.orientation = yaw_to_quat(yaw_ref_);
+    target_pub_->publish(target_msg);
 }
 
 void TrajectoryNode::publish_path_vis() {
