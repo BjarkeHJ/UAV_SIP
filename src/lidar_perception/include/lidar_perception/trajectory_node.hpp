@@ -21,22 +21,18 @@ class TrajectoryNode : public rclcpp::Node
 {
 public:
     TrajectoryNode();
-
 private:
-    rclcpp_action::Server<ExecutePath>::SharedPtr action_server_;
+    rclcpp_action::Server<ExecutePath>::SharedPtr planner_action_server_;
     rclcpp::TimerBase::SharedPtr timer_;
-
-    rclcpp::Subscription<nav_msgs::msg::Path>::SharedPtr path_sub_;
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr target_pub_;
+    rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr vis_path_pub_;
 
-    std::string path_topic_;
     std::string target_topic_;
     int timer_tick_ms_;
     
-    void path_callback(const nav_msgs::msg::Path::SharedPtr path_msg);
     void timer_callback();
     void update_reference(float dt);
-    
+
     rclcpp_action::GoalResponse handle_goal(const rclcpp_action::GoalUUID&, std::shared_ptr<const ExecutePath::Goal> goal);
     rclcpp_action::CancelResponse handle_cancel(const std::shared_ptr<rclcpp_action::ServerGoalHandle<ExecutePath>> goal_handle);
     void handle_accepted(const std::shared_ptr<rclcpp_action::ServerGoalHandle<ExecutePath>> goal_handle);
@@ -46,7 +42,7 @@ private:
     float wrap_pi(float a);
     float compute_remaining_distance();
     float compute_progress();
-
+    void publish_path_vis();
 
     std::shared_ptr<rclcpp_action::ServerGoalHandle<ExecutePath>> active_goal_;
     nav_msgs::msg::Path active_path_;
@@ -58,13 +54,13 @@ private:
     std::deque<Waypoint> path_;
     rclcpp::Time last_path_time_;
 
-    Eigen::Vector3f pos_ref_{0.0f, 0.0f, 0.5f};
+    Eigen::Vector3f pos_ref_{0.0f, 0.0f, 0.5f}; // hover 50cm above ground
     Eigen::Vector3f vel_ref_{0.0f, 0.0f, 0.0f};
     float yaw_ref_{0.0f};
 
     float vel_max_{2.0f}; // max velocity
     float acc_max_{2.0f}; // max acceleration
-    float lookahead_{1.5f};
+    float lookahead_{1.0f};
     float pos_tol_{0.3f};
     float yaw_tol_{5.0f}; // degree
     float yaw_rate_max_{0.5f}; // rad/s

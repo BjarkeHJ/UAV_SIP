@@ -1,41 +1,33 @@
+/*
+Trajectory Node 
+Key feature: Takes waypoints (position + orientation) from high
+level planner and computes a feasible trajectory for the UAV to track. Sends
+command to PX4 Offboard bridge node that handles all direct interface with the
+flight stack.
+
+This node is a Action Server. 
+
+*/
+
 #include "lidar_perception/trajectory_node.hpp"
 
 TrajectoryNode::TrajectoryNode() : Node("trajectory_node") {
     timer_tick_ms_ = this->declare_parameter<int>("timer_tick_ms", 50);
-    path_topic_ = this->declare_parameter<std::string>("path_topic", "/waypoints_path");
     target_topic_ = this->declare_parameter<std::string>("target_topic", "/gz_px4_sim/target_pose");
 
-    path_sub_ = this->create_subscription<nav_msgs::msg::Path>(path_topic_, 5, std::bind(&TrajectoryNode::path_callback, this, std::placeholders::_1));
-    target_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>(target_topic_, 5);
+    planner_action_server_ = rclcpp_action::create_server<ExecutePath>(
+        this,
+        "execute_path",
+        std::bind(&TrajectoryNode::handle_goal, this, std::placeholders::_1, std::placeholders::_2),
+        std::bind(&TrajectoryNode::handle_cancel, this, std::placeholders::_1),
+        std::bind(&TrajectoryNode::handle_accepted, this, std::placeholders::_1) 
+    );
+
     timer_ = this->create_wall_timer(std::chrono::milliseconds(timer_tick_ms_), std::bind(&TrajectoryNode::timer_callback, this));
+    target_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>(target_topic_, 5);
+    vis_path_pub_ = this->create_publisher<nav_msgs::msg::Path>("path_vis_", 10);
 
-    RCLCPP_INFO(this->get_logger(), "Trajectory node started...");
-}
-
-void TrajectoryNode::path_callback(const nav_msgs::msg::Path::SharedPtr path_msg) {
-    last_path_time_ = this->get_clock()->now();
-
-    std::cout << "MESSAGE" << std::endl;
-
-    if (path_msg->poses.size() < 1) {
-        RCLCPP_WARN(this->get_logger(), "Received Empty Path - Nothing to do!");
-        have_path_ = false;
-        path_.clear();
-        return;
-    }
-
-    path_.clear();
-    path_.push_back(Waypoint{pos_ref_, yaw_ref_});
-
-    // Incoming waypoints
-    for (const auto& ps : path_msg->poses) {
-        Eigen::Vector3f p(ps.pose.position.x, ps.pose.position.y, ps.pose.position.z);
-        float yaw = quat_to_yaw(ps.pose.orientation);
-        path_.push_back({p, yaw});
-    }
-
-    std::cout << path_.size() << std::endl;
-    have_path_ = (path_.size() >= 2 );
+    RCLCPP_INFO(this->get_logger(), "Trajectory node (Action Server) started...");
 }
 
 void TrajectoryNode::timer_callback() {
@@ -51,32 +43,15 @@ void TrajectoryNode::timer_callback() {
         return;
     }
 
-    const float dt_s = static_cast<float>(timer_tick_ms_) / 1000.0f;
-    update_reference(dt_s);
-
+    // Update current reference command to send to the PX4 Offboard controller
     const auto& wp = active_path_.poses[active_index_];
     current_ref_ = wp;
 
-    auto feedback = std::make_shared<ExecutePath::Feedback>();
-    feedback->active_index = static_cast<uint32_t>(active_index_);
-    feedback->remaining_distance = compute_remaining_distance();
-    feedback->progress = compute_progress();
-    feedback->state = "EXECUTING";
-    feedback->plan_id = path_id_;
-    active_goal_->publish_feedback(feedback);
-    
-    if (active_index_ + 1 < active_path_.poses.size()) {
-        active_index_++;
-        return;
-    }
+    const float dt_s = static_cast<float>(timer_tick_ms_) / 1000.0f;
+    update_reference(dt_s);
+    publish_path_vis();
 
-    auto result = std::make_shared<ExecutePath::Result>();
-    result->success = true;
-    result->message = "Reached end of path";
-    result->plan_id = path_id_;
-    active_goal_->succeed(result);
-    active_goal_.reset();
-
+    // Publish command
     geometry_msgs::msg::PoseStamped target_msg;
     target_msg.header.frame_id = "odom";
     target_msg.header.stamp = this->get_clock()->now();
@@ -85,16 +60,41 @@ void TrajectoryNode::timer_callback() {
     target_msg.pose.position.z = pos_ref_.z();
     target_msg.pose.orientation = yaw_to_quat(yaw_ref_);
     target_pub_->publish(target_msg);
+
+    // Provide feedback (Topic stream) to high level planner
+    auto feedback = std::make_shared<ExecutePath::Feedback>();
+    feedback->active_index = static_cast<uint32_t>(active_index_);
+    feedback->remaining_distance = compute_remaining_distance();
+    feedback->progress = compute_progress();
+    feedback->state = "EXECUTING";
+    feedback->plan_id = path_id_;
+    active_goal_->publish_feedback(feedback);
+    
+    // When finished return result to high level planner 
+    const size_t N = active_path_.poses.size();
+    const auto &last = active_path_.poses[N - 1].pose.position;
+    Eigen::Vector3f last_p(last.x, last.y, last.z);
+
+    bool pos_ok = (last_p - pos_ref_).norm() < pos_tol_;
+    bool vel_ok = vel_ref_.norm() < 0.2f;
+
+    if (active_index_ >= (N - 1) && pos_ok && vel_ok) {
+        auto result = std::make_shared<ExecutePath::Result>();
+        result->success = true;
+        result->message = "Reached end of path";
+        result->plan_id = path_id_;
+        active_goal_->succeed(result);
+        active_goal_.reset();
+    }
 }
 
 void TrajectoryNode::update_reference(float dt) {
-    // if (!have_path_ || (this->get_clock()->now() - last_plan_time_).seconds() > stale_timeout_) {
-    if (!have_path_) {
-        // brake to stop smoothly
+    // No active goal -> halt
+    if (!active_goal_ || active_path_.poses.empty()) {
         Eigen::Vector3f dv = -vel_ref_;
         float dv_norm = dv.norm();
         float dv_max = acc_max_ * dt;
-        if (dv_norm > dv_max) {
+        if (dv_norm > dv_max && dv_norm > 1e-6f) {
             dv *= (dv_max / dv_norm);
         }
         vel_ref_ += dv;
@@ -102,73 +102,132 @@ void TrajectoryNode::update_reference(float dt) {
         return;
     }
 
-    while (path_.size() >= 2) {
-        Eigen::Vector3f to_wp = path_[1].pos - pos_ref_;
-        if (to_wp.norm() < pos_tol_) {
-            path_.pop_front(); // advance waypoint
+    const size_t N = active_path_.poses.size();
+    if (N == 1) {
+        // Only one waypoint: just go/hold there
+        const auto &p0 = active_path_.poses[0].pose.position;
+        Eigen::Vector3f goal_p(p0.x, p0.y, p0.z);
+
+        Eigen::Vector3f err = goal_p - pos_ref_; // Vector from reference to next wp
+        if (err.norm() < pos_tol_) {
+            // snap + stop
+            pos_ref_ = goal_p;
+            vel_ref_.setZero();
+        } else {
+            // simple chase
+            Eigen::Vector3f dir = err.normalized();
+            Eigen::Vector3f vel_des = dir * vel_max_;
+
+            Eigen::Vector3f dv = vel_des - vel_ref_;
+            float dv_norm = dv.norm();
+            float dv_max = acc_max_ * dt;
+            if (dv_norm > dv_max && dv_norm > 1e-6f) dv *= (dv_max / dv_norm);
+            vel_ref_ += dv;
+            pos_ref_ += vel_ref_ * dt;
         }
-        else {
+        return;
+    }
+
+    // active_index_ means: "last reached waypoint index" (0..N-1)
+    active_index_ = std::min(active_index_, N - 1);
+
+    // Advance index while we're within tolerance of the NEXT waypoint
+    while ((active_index_ + 1) < N) {
+        const auto &next = active_path_.poses[active_index_ + 1].pose.position;
+        Eigen::Vector3f next_p(next.x, next.y, next.z);
+        if ((next_p - pos_ref_).norm() < pos_tol_) {
+            active_index_++;
+        } else {
             break;
         }
     }
 
-    if (path_.size() < 2) {
-        RCLCPP_WARN(this->get_logger(), "[Trajectory Generator] Less than 2 waypoints given... Cannot generate trajectory!");
-        have_path_ = false;
+    // If we've reached the last waypoint, brake to stop and hold it
+    if (active_index_ >= (N - 1)) {
+        const auto &last = active_path_.poses[N - 1].pose.position;
+        Eigen::Vector3f last_p(last.x, last.y, last.z);
+
+        // Hold position at the last waypoint (optional snap when close)
+        Eigen::Vector3f err = last_p - pos_ref_;
+        if (err.norm() < pos_tol_) {
+            pos_ref_ = last_p;
+        }
+
+        // Brake to zero velocity smoothly
+        Eigen::Vector3f dv = -vel_ref_;
+        float dv_norm = dv.norm();
+        float dv_max = acc_max_ * dt;
+        if (dv_norm > dv_max && dv_norm > 1e-6f) dv *= (dv_max / dv_norm);
+        vel_ref_ += dv;
+        pos_ref_ += vel_ref_ * dt;
+
+        // Yaw: converge to final waypoint yaw (rate-limited)
+        float yaw_goal = quat_to_yaw(active_path_.poses[N - 1].pose.orientation);
+        float dy = wrap_pi(yaw_goal - yaw_ref_);
+        float max_dy = yaw_rate_max_ * dt;
+        dy = std::clamp(dy, -max_dy, +max_dy);
+        yaw_ref_ = wrap_pi(yaw_ref_ + dy);
+
         return;
     }
 
-    Eigen::Vector3f target = path_[1].pos;
+    // Otherwise track the next waypoint (active_index_+1) with a carrot/lookahead
+    const auto &tgt_pose = active_path_.poses[active_index_ + 1].pose;
+    Eigen::Vector3f target(tgt_pose.position.x, tgt_pose.position.y, tgt_pose.position.z);
+
     Eigen::Vector3f d = target - pos_ref_;
     float dist = d.norm();
+
+    // Direction to target
     Eigen::Vector3f dir = Eigen::Vector3f::Zero();
     if (dist > 1e-6f) dir = d / dist;
-    
+
+    // Carrot point
     float step = std::min(lookahead_, dist);
     Eigen::Vector3f carrot = pos_ref_ + dir * step;
-    
-    Eigen::Vector3f vel_des = (carrot - pos_ref_);
-    float vel_des_norm = vel_des.norm();
-    if (vel_des_norm > 1e-6f) {
-        vel_des = vel_des / vel_des_norm * std::min(vel_max_, vel_des_norm / dt); // velocity-ish
-    }
-    else {
-        vel_des.setZero();
-    }
 
-    // limit acceleration
+    // Desired velocity towards carrot (cap by vel_max_)
+    Eigen::Vector3f vel_des = (carrot - pos_ref_) / dt;
+    float vnorm = vel_des.norm();
+    if (vnorm > vel_max_ && vnorm > 1e-6f) vel_des *= (vel_max_ / vnorm);
+
+    // Accel limit
     Eigen::Vector3f dv = vel_des - vel_ref_;
     float dv_norm = dv.norm();
     float dv_max = acc_max_ * dt;
-    if (dv_norm > dv_max) {
-        dv *= (dv_max / dv_norm);
-    }
+    if (dv_norm > dv_max && dv_norm > 1e-6f) dv *= (dv_max / dv_norm);
     vel_ref_ += dv;
-    pos_ref_ += vel_ref_ * dt; // integrate pos;
-    
-    // limit yaw rate
-    float yaw_des = yaw_ref_;
+
+    // Integrate position
+    pos_ref_ += vel_ref_ * dt;
+
+    // Yaw: either face velocity when moving, else follow waypoint yaw
+    float yaw_des;
     if (vel_ref_.head<2>().norm() > 0.2f) {
         yaw_des = std::atan2(vel_ref_.y(), vel_ref_.x());
+    } else {
+        yaw_des = quat_to_yaw(tgt_pose.orientation);
     }
 
     float dy = wrap_pi(yaw_des - yaw_ref_);
     float max_dy = yaw_rate_max_ * dt;
     dy = std::clamp(dy, -max_dy, +max_dy);
     yaw_ref_ = wrap_pi(yaw_ref_ + dy);
+
 }
 
 rclcpp_action::GoalResponse TrajectoryNode::handle_goal(const rclcpp_action::GoalUUID&, std::shared_ptr<const ExecutePath::Goal> goal) {
     if (goal->path.poses.empty()) {
-    RCLCPP_WARN(this->get_logger(), "Rejected goal: empty path.");
-    return rclcpp_action::GoalResponse::REJECT;
+        RCLCPP_WARN(this->get_logger(), "Rejected goal: empty path.");
+        return rclcpp_action::GoalResponse::REJECT;
     }
-    RCLCPP_INFO(this->get_logger(), "Accepted goal request plan_id=%lu with %zu poses",
-                (unsigned long)goal->plan_id, goal->path.poses.size());
+
+    RCLCPP_INFO(this->get_logger(), "Accepted goal request plan_id=%lu with %zu poses", (unsigned long)goal->plan_id, goal->path.poses.size());
     return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
 }
 
 rclcpp_action::CancelResponse TrajectoryNode::handle_cancel(const std::shared_ptr<rclcpp_action::ServerGoalHandle<ExecutePath>> goal_handle) {
+    // Blindly accept cancellation 
     (void)goal_handle;
     RCLCPP_INFO(this->get_logger(), "Cancel requested.");
     return rclcpp_action::CancelResponse::ACCEPT;
@@ -185,24 +244,19 @@ void TrajectoryNode::handle_accepted(const std::shared_ptr<rclcpp_action::Server
       active_goal_->abort(result);
     }
 
-    active_goal_ = goal_handle;
+    // Set acctepted goal
+    active_goal_ = goal_handle;  
     auto goal = goal_handle->get_goal();
 
+    // Copy goal content
     active_path_ = goal->path;
+    path_id_ = goal->plan_id;
     active_index_ = 0;
+
     pos_tol_ = goal->pos_tolerance;
     yaw_tol_ = goal->yaw_tolerance;
     vel_max_ = goal->v_max;
     acc_max_ = goal->a_max;
-    path_id_ = goal->plan_id;
-
-    // Anchor continuity trick: start execution from current_ref_ instead of first waypoint
-    // Minimal version: just overwrite the first pose with current_ref_ position.
-    // Better: insert current_ref_ at front (or anchor your spline/queue).
-    if (!active_path_.poses.empty()) {
-      active_path_.poses.front().pose.position = current_ref_.pose.position;
-      active_path_.poses.front().pose.orientation = current_ref_.pose.orientation;
-    }
 
     RCLCPP_INFO(get_logger(), "Started executing plan_id=%lu", (unsigned long)path_id_);
 }
@@ -239,6 +293,17 @@ float TrajectoryNode::wrap_pi(float a) {
     while (a < -M_1_PI) a += 2.f * M_PI;
     return a;
 }
+
+void TrajectoryNode::publish_path_vis() {
+    nav_msgs::msg::Path rem;
+    rem.header.frame_id = active_path_.header.frame_id;
+    rem.header.stamp = this->get_clock()->now();
+    for (size_t i=active_index_+1; i<active_path_.poses.size(); ++i) {
+        rem.poses.push_back(active_path_.poses[i]);
+    }
+    vis_path_pub_->publish(rem);
+}
+
 
 int main(int argc, char* argv[]) {
     rclcpp::init(argc, argv);
