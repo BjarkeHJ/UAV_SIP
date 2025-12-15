@@ -6,6 +6,15 @@ LidarPerceptionNode::LidarPerceptionNode() : Node("LidarPerceptionNode") {
     drone_frame_ = this->declare_parameter<std::string>("drone_frame", "base_link");
     lidar_frame_ = this->declare_parameter<std::string>("lidar_frame", "lidar_frame");
 
+    pp_params_.width = this->declare_parameter<int>("tof_px_W", 240);
+    pp_params_.height = this->declare_parameter<int>("tof_px_H", 180);
+    pp_params_.hfov_deg = this->declare_parameter<float>("tof_fov_h", 106.0f);
+    pp_params_.vfov_deg = this->declare_parameter<float>("tof_fov_v", 86.0f);
+    pp_params_.ds_factor = this->declare_parameter<float>("cloud_ds_factor", 2.0f);
+    pp_params_.min_range = this->declare_parameter<float>("tof_min_range", 0.1f);
+    pp_params_.max_range = this->declare_parameter<float>("tof_max_range", 10.0f);
+    pp_params_.keep_closest = this->declare_parameter<bool>("ds_keep_closest", true);
+
     tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
     tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
@@ -24,6 +33,10 @@ LidarPerceptionNode::LidarPerceptionNode() : Node("LidarPerceptionNode") {
     latest_pts_w_nrms_ = std::make_shared<pcl::PointCloud<pcl::PointNormal>>();
     cloud_buff_ = std::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
 
+    tree = std::make_shared<pcl::search::KdTree<pcl::PointXYZ>>();
+    
+    smapper_ = std::make_shared<SurfelMapping>();
+
     RCLCPP_INFO(this->get_logger(), "LidarPerceptionNode Started...");
 }
 
@@ -32,6 +45,10 @@ void LidarPerceptionNode::pointcloud_callback(const sensor_msgs::msg::PointCloud
         RCLCPP_INFO(this->get_logger(), "Received empty point cloud...");
         return;
     }
+
+    // TODO: Have this callback only grab the latest pointcloud and store it
+    // Then have a worker thread do the heavy lifting so this executor is not stalled...
+    // have separate timer for planning (if planning is heavy -> multithread executor)
 
     auto t1 = std::chrono::high_resolution_clock::now();
 
@@ -55,11 +72,10 @@ void LidarPerceptionNode::pointcloud_callback(const sensor_msgs::msg::PointCloud
     sensor_msgs::msg::PointCloud2 msg_clean;
     pcl::toROSMsg(*latest_cloud_, msg_clean);
     msg_clean.header.frame_id = global_frame_;
-    // msg_clean.header.stamp = this->get_clock()->now();
     msg_clean.header.stamp = msg->header.stamp;
     cloud_pub_->publish(msg_clean);
 
-    pointcloud_preprocess();
+    normal_estimation();
 
     auto t2 = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> te = t2 - t1;
@@ -67,6 +83,7 @@ void LidarPerceptionNode::pointcloud_callback(const sensor_msgs::msg::PointCloud
     std::cout << latest_cloud_->points.size() << std::endl;
 
     // TODO: Batch accumulator over N scans using transform information? (Flag to run/wait preprocess on batch)
+
 }
 
 void LidarPerceptionNode::filtering(const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
@@ -75,14 +92,8 @@ void LidarPerceptionNode::filtering(const sensor_msgs::msg::PointCloud2::SharedP
     pcl::fromROSMsg(*msg, *cloud_buff_);
 
     // Custom downsampling 
-    CloudPreprocess::Params p;
-    p.width = 240;
-    p.height = 180;
-    p.hfov_deg = 106.0;
-    p.vfov_deg = 86.0;
-    p.ds_factor = 2;
-    CloudPreprocess ds(p);
-    ds.downsample(*cloud_buff_, *latest_cloud_);
+    CloudPreprocess pp(pp_params_);
+    pp.downsample(*cloud_buff_, *latest_cloud_);
     
     // Transform Pointcloud  
     Eigen::Matrix4f T = Eigen::Matrix4f::Identity();
@@ -110,21 +121,19 @@ void LidarPerceptionNode::filtering(const sensor_msgs::msg::PointCloud2::SharedP
     latest_cloud_ = cloud_buff_;
 }
 
-
-void LidarPerceptionNode::pointcloud_preprocess() {
+void LidarPerceptionNode::normal_estimation() {
     if (!latest_cloud_ || latest_cloud_->points.empty()) return;
 
     // Surface normal estimation 
     pcl::NormalEstimation<pcl::PointXYZ, pcl::Normal> ne;
-    pcl::search::KdTree<pcl::PointXYZ>::Ptr tree(new pcl::search::KdTree<pcl::PointXYZ>());
     ne.setInputCloud(latest_cloud_);
     ne.setSearchMethod(tree);
     ne.setKSearch(10);
     ne.setViewPoint(latest_pos_.x(), latest_pos_.y(), latest_pos_.z());
     ne.compute(*latest_normals_);
 
-    pcl::PointCloud<pcl::PointNormal>::Ptr cloud_w_normals(new pcl::PointCloud<pcl::PointNormal>);
-    pcl::concatenateFields(*latest_cloud_, *latest_normals_, *cloud_w_normals);
+    pcl::concatenateFields(*latest_cloud_, *latest_normals_, *latest_pts_w_nrms_);
+
     // publishNormals(cloud_w_normals, global_frame_, 0.1);
 }
 

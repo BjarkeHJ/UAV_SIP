@@ -23,6 +23,7 @@
 #include <pcl/filters/statistical_outlier_removal.h>
 
 #include "lidar_perception/preprocess.hpp"
+#include "lidar_perception/surfel_mapping.hpp"
 
 class LidarPerceptionNode : public rclcpp::Node {
 public:
@@ -30,11 +31,9 @@ public:
 
 private:
     void pointcloud_callback(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
-    void pointcloud_preprocess();
-    void publishNormals(pcl::PointCloud<pcl::PointNormal>::Ptr cloud_w_nrms, std::string &frame_id, double scale);
-
     void filtering(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
-
+    void normal_estimation();
+    void publishNormals(pcl::PointCloud<pcl::PointNormal>::Ptr cloud_w_nrms, std::string &frame_id, double scale);
 
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr cloud_sub_;
     std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
@@ -44,6 +43,7 @@ private:
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr nrm_pub_;
 
     float gnd_th{0.2};
+    CloudPreprocess::Params pp_params_;
 
     int cloud_count_; 
     std::string cloud_in_topic_;
@@ -59,6 +59,10 @@ private:
     pcl::PointCloud<pcl::Normal>::Ptr latest_normals_;
     pcl::PointCloud<pcl::PointNormal>::Ptr latest_pts_w_nrms_;
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_buff_;
+
+    pcl::search::KdTree<pcl::PointXYZ>::Ptr tree;
+
+    std::shared_ptr<SurfelMapping> smapper_;
 };
 
 #endif
