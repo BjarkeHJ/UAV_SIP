@@ -12,14 +12,7 @@
 #include <Eigen/Core>
 #include <Eigen/Eigenvalues>
 
-struct Surfel
-{
-  Eigen::Vector3f centroid;   // world/frame coordinates
-  Eigen::Vector3f normal;     // unit vector preferred
-  Eigen::Vector3f t1;         // unit tangent
-  Eigen::Vector3f t2;         // unit tangent
-  Eigen::Matrix2f cov2d;      // covariance in (t1,t2) coords of projected points
-};
+#include "lidar_perception/surfel_mapping.hpp"
 
 struct SurfelVizConfig
 {
@@ -43,7 +36,7 @@ struct SurfelVizConfig
   // How “big” ellipse is:
   // k_sigma = 2 means 2σ along principal axes (good for debugging).
   // If you want a confidence ellipse, you can instead use chi2_2d (see comment in cpp).
-  float k_sigma = 2.0f;
+  float k_sigma = 1.0f;
 
   // lifetime: 0 = forever. For live debugging, 0.2–0.5s is nice.
   double lifetime_sec = 0.3;
@@ -54,8 +47,8 @@ struct SurfelVizConfig
   // namespace toggles
   bool show_centroids = true;
   bool show_normals   = true;
-  bool show_tangents  = true;
-  bool show_cov       = true;
+  bool show_tangents  = false;
+  bool show_cov       = false;
 };
 
 class SurfelDebugViz
@@ -67,7 +60,7 @@ public:
     pub_ = node_.create_publisher<visualization_msgs::msg::MarkerArray>(cfg_.topic, 10);
   }
 
-  void publish(const std::vector<Surfel>& surfels)
+  void publish(const std::vector<Surfel2D>& surfels)
   {
     visualization_msgs::msg::MarkerArray ma;
     const auto stamp = node_.now();
@@ -98,7 +91,7 @@ private:
   SurfelVizConfig cfg_;
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pub_;
 
-  visualization_msgs::msg::Marker make_centroid_marker(const Surfel& s,
+  visualization_msgs::msg::Marker make_centroid_marker(const Surfel2D& s,
                                                        const rclcpp::Time& stamp,
                                                        int id) const
   {
@@ -126,7 +119,7 @@ private:
     return m;
   }
 
-  visualization_msgs::msg::Marker make_arrow_marker(const Surfel& s,
+  visualization_msgs::msg::Marker make_arrow_marker(const Surfel2D& s,
                                                     const rclcpp::Time& stamp,
                                                     int id,
                                                     const std::string& ns,
@@ -166,7 +159,7 @@ private:
     return m;
   }
 
-  visualization_msgs::msg::Marker make_cov_ellipse_marker(const Surfel& s,
+  visualization_msgs::msg::Marker make_cov_ellipse_marker(const Surfel2D& s,
                                                           const rclcpp::Time& stamp,
                                                           int id) const
   {

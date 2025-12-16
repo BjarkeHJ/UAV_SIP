@@ -60,11 +60,11 @@ void SurfelMapping::make_tangent_basis(const Eigen::Vector3f& n, Eigen::Vector3f
 }
 
 std::vector<int> SurfelMapping::voxel_seeds(const pcl::PointCloud<pcl::PointNormal>& cloud) const {
-    std::unordered_set<VoxelKey, VoxelKeyHash, VoxelKeyEq> used; // set of unique keys
+    std::unordered_set<VoxelKey, VoxelKeyHash, VoxelKeyEq> used; // hashtable set of unique keys
     used.reserve(cloud.size());
 
     std::vector<int> seeds;
-    seeds.reserve(cloud.size() / 8);
+    seeds.reserve(cloud.size() / 8); // very conservative
 
     const float inv = 1.0f / p_.seed_voxel;
 
@@ -72,14 +72,14 @@ std::vector<int> SurfelMapping::voxel_seeds(const pcl::PointCloud<pcl::PointNorm
         const auto& pn = cloud.points[i];
         if (!finitePN(pn)) continue;
 
-        VoxelKey k{
+        VoxelKey k {
             (int)std::floor(double(pn.x) * inv),
             (int)std::floor(double(pn.y) * inv),
             (int)std::floor(double(pn.z) * inv),
         };
 
         if (used.insert(k).second) {
-            // second "true" if inserted
+            // second "true" if inserted (unique)
             seeds.push_back(i);
             if ((int)seeds.size() >= p_.max_surfels) break;
         }
@@ -114,6 +114,13 @@ float SurfelMapping::estimate_adaptive_radius(pcl::search::KdTree<pcl::PointNorm
 }
 
 bool SurfelMapping::build_surfel_from_nbh(const pcl::PointCloud<pcl::PointNormal>& cloud, const std::vector<int>& idx, const Eigen::Vector3f& seed_n, Surfel2D& out) const {
+    /**
+     Build a Surfel2D on the plane defined by seed_n. 
+     The surfel is based on the neighboring points contained in idx
+
+
+    **/
+    
     if ((int)idx.size() < 8) return false;
     
     const float cos_max = std::cos(deg2rad(p_.max_angle_deg));
@@ -124,6 +131,8 @@ bool SurfelMapping::build_surfel_from_nbh(const pcl::PointCloud<pcl::PointNormal
 
     std::vector<int> kept;
     kept.reserve(std::min((int)idx.size(), p_.max_support_pts));
+
+    // TODO: Get average mean before 
 
     // fit to neighborhood
     for (int j=0; j<(int)idx.size() && (int)kept.size() < p_.max_support_pts; ++j) {
@@ -141,12 +150,13 @@ bool SurfelMapping::build_surfel_from_nbh(const pcl::PointCloud<pcl::PointNormal
             n = -n;
         }
 
+        // if seed point is noisy -> ignores potentially good normals and falls apart!
         if (n.dot(seed_n) < cos_max) continue;
 
         float w = 1.0f;
         if (p_.weight_by_normal_agreement) {
             float c = std::max(0.0f, n.dot(seed_n));
-            w = 0.25 + 0.75 * c; // [0.25, 1.0]
+            w = 0.25f + 0.75f * c; // [0.25, 1.0]
         }
 
         mu += w * p;

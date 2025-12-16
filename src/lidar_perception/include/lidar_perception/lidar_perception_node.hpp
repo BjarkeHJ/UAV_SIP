@@ -24,6 +24,7 @@
 
 #include "lidar_perception/preprocess.hpp"
 #include "lidar_perception/surfel_mapping.hpp"
+#include "lidar_perception/surfel_debug_viz.hpp"
 
 class LidarPerceptionNode : public rclcpp::Node {
 public:
@@ -35,7 +36,6 @@ private:
     void normal_estimation();
 
     // Visualization
-    void publish_surfels(const std::vector<Surfel2D>& sfls);
     void publishNormals(pcl::PointCloud<pcl::PointNormal>::Ptr cloud_w_nrms, std::string &frame_id, double scale);
 
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr cloud_sub_;
@@ -66,6 +66,9 @@ private:
     pcl::search::KdTree<pcl::PointXYZ>::Ptr tree_;
 
     std::shared_ptr<SurfelMapping> smapper_;
+
+    std::unique_ptr<SurfelDebugViz> surfel_viz_;
+
 };
 
 #endif

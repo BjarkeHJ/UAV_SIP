@@ -10,7 +10,7 @@ LidarPerceptionNode::LidarPerceptionNode() : Node("LidarPerceptionNode") {
     pp_params_.height = this->declare_parameter<int>("tof_px_H", 180);
     pp_params_.hfov_deg = this->declare_parameter<double>("tof_fov_h", 106.0f);
     pp_params_.vfov_deg = this->declare_parameter<double>("tof_fov_v", 86.0f);
-    pp_params_.ds_factor = this->declare_parameter<double>("cloud_ds_factor", 4.0f);
+    pp_params_.ds_factor = this->declare_parameter<double>("cloud_ds_factor", 1.0f);
     pp_params_.min_range = this->declare_parameter<double>("tof_min_range", 0.1f);
     pp_params_.max_range = this->declare_parameter<double>("tof_max_range", 10.0f);
     pp_params_.keep_closest = this->declare_parameter<bool>("ds_keep_closest", true);
@@ -37,6 +37,15 @@ LidarPerceptionNode::LidarPerceptionNode() : Node("LidarPerceptionNode") {
     
     SurfelParams smp_;
     smapper_ = std::make_shared<SurfelMapping>(smp_);
+
+
+    SurfelVizConfig sfv_cfg;
+    sfv_cfg.frame_id = global_frame_;
+    sfv_cfg.topic = "/surfels_debug";
+    sfv_cfg.k_sigma = 2.0f;
+    sfv_cfg.lifetime_sec = 0.3;
+    sfv_cfg.stride = 1;
+    surfel_viz_ = std::make_unique<SurfelDebugViz>(*this, sfv_cfg);
 
     RCLCPP_INFO(this->get_logger(), "LidarPerceptionNode Started...");
 }
@@ -91,7 +100,7 @@ void LidarPerceptionNode::pointcloud_callback(const sensor_msgs::msg::PointCloud
     std::cout << "Surfel Extract Duration: " <<  tee.count() << "s." << std::endl;
 
     // TODO: Batch accumulator over N scans using transform information? (Flag to run/wait preprocess on batch)
-
+    surfel_viz_->publish(s2ds);
 }
 
 void LidarPerceptionNode::filtering(const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
@@ -144,6 +153,7 @@ void LidarPerceptionNode::normal_estimation() {
 
     // publishNormals(cloud_w_normals, global_frame_, 0.1);
 }
+
 
 void LidarPerceptionNode::publishNormals(pcl::PointCloud<pcl::PointNormal>::Ptr cloud_w_nrms, std::string &frame_id, double scale) {
     visualization_msgs::msg::MarkerArray marker_array;

@@ -21,17 +21,17 @@ struct Surfel2D {
 };
 
 struct SurfelParams {
-    float seed_voxel = 0.20;
+    float seed_voxel = 0.5f;
     int max_surfels = 5000;
-
-    int knn = 20;
+    int knn = 10;
     float r_scale = 2.5f;
     float r_min = 0.08f;
     float r_max = 0.60f;
+
     int max_support_pts = 100;
 
-    float max_angle_deg = 25.0f;
-    float max_plane_rms = 0.05f;
+    float max_angle_deg = 10.0f;
+    float max_plane_rms = 0.1f;
     float min_planarity = 0.70f;
 
     bool weight_by_normal_agreement = true;
@@ -39,7 +39,6 @@ struct SurfelParams {
 
 class SurfelMapping {
 public:
-    // SurfelMapping(SurfelParams p = {}) : p_(p) {}
     SurfelMapping(SurfelParams p = {});
 
     void run();
@@ -62,6 +61,7 @@ private:
             return h;
         }
     };
+
     struct VoxelKeyEq {
         bool operator()(const VoxelKey& a, const VoxelKey& b) const noexcept {
             return a.x==b.x && a.y==b.y && a.z==b.z;
@@ -95,5 +95,5 @@ private:
     pcl::search::KdTree<pcl::PointNormal>::Ptr tree_;
 };
 
-
 #endif
+
