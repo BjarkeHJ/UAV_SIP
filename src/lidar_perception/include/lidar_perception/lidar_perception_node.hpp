@@ -33,6 +33,9 @@ private:
     void pointcloud_callback(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
     void filtering(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
     void normal_estimation();
+
+    // Visualization
+    void publish_surfels(const std::vector<Surfel2D>& sfls);
     void publishNormals(pcl::PointCloud<pcl::PointNormal>::Ptr cloud_w_nrms, std::string &frame_id, double scale);
 
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr cloud_sub_;
@@ -60,7 +63,7 @@ private:
     pcl::PointCloud<pcl::PointNormal>::Ptr latest_pts_w_nrms_;
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_buff_;
 
-    pcl::search::KdTree<pcl::PointXYZ>::Ptr tree;
+    pcl::search::KdTree<pcl::PointXYZ>::Ptr tree_;
 
     std::shared_ptr<SurfelMapping> smapper_;
 };

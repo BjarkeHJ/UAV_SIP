@@ -2,7 +2,9 @@
 #define SURFEL_MAPPING_HPP_
 
 #include <chrono>
+#include <unordered_set>
 #include <Eigen/Core>
+#include <Eigen/Eigenvalues>
 #include <pcl/common/common.h>
 #include <pcl/search/kdtree.h>
 
@@ -40,6 +42,7 @@ public:
     // SurfelMapping(SurfelParams p = {}) : p_(p) {}
     SurfelMapping(SurfelParams p = {});
 
+    void run();
     void set_local_frame(const pcl::PointCloud<pcl::PointNormal>::Ptr pts_w_nrm) { pts_w_nrm_ = pts_w_nrm; }
     std::vector<Surfel2D>& get_local_surfels() { return sframe_; }
 
@@ -66,21 +69,21 @@ private:
     };
 
     /* Functions */
-    inline bool finitePN(const pcl::PointNormal& pn) { return std::isfinite(pn.x) && std::isfinite(pn.y) && std::isfinite(pn.z) && std::isfinite(pn.normal_x) && std::isfinite(pn.normal_y) && std::isfinite(pn.normal_z); }    
-    inline Eigen::Vector3f P(const pcl::PointNormal& pn) { return {pn.x, pn.y, pn.z}; }
-    inline Eigen::Vector3f N(const pcl::PointNormal& pn) { return {pn.normal_x, pn.normal_y, pn.normal_z}; }
-    inline float clamp(float v, float lo, float hi) { return std::max(lo, std::min(hi, v)); }
-    inline float deg2rad(float deg) { return deg * M_PI / 180.0f; }
+    inline Eigen::Vector3f P(const pcl::PointNormal& pn) const { return {pn.x, pn.y, pn.z}; }
+    inline Eigen::Vector3f N(const pcl::PointNormal& pn) const { return {pn.normal_x, pn.normal_y, pn.normal_z}; }
+    inline bool finitePN(const pcl::PointNormal& pn) const { return std::isfinite(pn.x) && std::isfinite(pn.y) && std::isfinite(pn.z) && std::isfinite(pn.normal_x) && std::isfinite(pn.normal_y) && std::isfinite(pn.normal_z); }    
+    inline float clamp(float v, float lo, float hi) const { return std::max(lo, std::min(hi, v)); }
+    inline float deg2rad(float deg) const { return deg * M_PI / 180.0f; }
 
-    void make_tangent_basis(const Eigen::Vector3f& n, Eigen::Vector3f& t1, Eigen::Vector3f& t2);
-    bool build_surfel_from_nbh(const pcl::PointCloud<pcl::PointNormal>& cloud, const std::vector<int>& idx, const Eigen::Vector3f& seed_n, Surfel2D& out) const;
-    float estimate_adaptive_radius(int seed_idx) const;
-
+    // Local frame extract
+    void make_tangent_basis(const Eigen::Vector3f& n, Eigen::Vector3f& t1, Eigen::Vector3f& t2) const;
     std::vector<int> voxel_seeds(const pcl::PointCloud<pcl::PointNormal>& cloud) const;
+    float estimate_adaptive_radius(pcl::search::KdTree<pcl::PointNormal>& kdtree, const pcl::PointCloud<pcl::PointNormal>& cloud, int seed_idx) const;
+    bool build_surfel_from_nbh(const pcl::PointCloud<pcl::PointNormal>& cloud, const std::vector<int>& idx, const Eigen::Vector3f& seed_n, Surfel2D& out) const;
+    std::vector<Surfel2D> local_surfel_extraction(const pcl::PointCloud<pcl::PointNormal>::Ptr& cloud);
 
-    void local_surfel_extraction();
+    // Global map fuse
     void closest_surfel_registration();
-
 
     /* Data */
     int frame_count{0};
@@ -89,7 +92,7 @@ private:
     std::vector<Surfel2D> smap_; // global surfel map
 
     /* Utils */
-    pcl::search::KdTree<pcl::PointNormal>::Ptr tree;
+    pcl::search::KdTree<pcl::PointNormal>::Ptr tree_;
 };
 
 

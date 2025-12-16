@@ -8,11 +8,11 @@ LidarPerceptionNode::LidarPerceptionNode() : Node("LidarPerceptionNode") {
 
     pp_params_.width = this->declare_parameter<int>("tof_px_W", 240);
     pp_params_.height = this->declare_parameter<int>("tof_px_H", 180);
-    pp_params_.hfov_deg = this->declare_parameter<float>("tof_fov_h", 106.0f);
-    pp_params_.vfov_deg = this->declare_parameter<float>("tof_fov_v", 86.0f);
-    pp_params_.ds_factor = this->declare_parameter<float>("cloud_ds_factor", 2.0f);
-    pp_params_.min_range = this->declare_parameter<float>("tof_min_range", 0.1f);
-    pp_params_.max_range = this->declare_parameter<float>("tof_max_range", 10.0f);
+    pp_params_.hfov_deg = this->declare_parameter<double>("tof_fov_h", 106.0f);
+    pp_params_.vfov_deg = this->declare_parameter<double>("tof_fov_v", 86.0f);
+    pp_params_.ds_factor = this->declare_parameter<double>("cloud_ds_factor", 4.0f);
+    pp_params_.min_range = this->declare_parameter<double>("tof_min_range", 0.1f);
+    pp_params_.max_range = this->declare_parameter<double>("tof_max_range", 10.0f);
     pp_params_.keep_closest = this->declare_parameter<bool>("ds_keep_closest", true);
 
     tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
@@ -33,9 +33,10 @@ LidarPerceptionNode::LidarPerceptionNode() : Node("LidarPerceptionNode") {
     latest_pts_w_nrms_ = std::make_shared<pcl::PointCloud<pcl::PointNormal>>();
     cloud_buff_ = std::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
 
-    tree = std::make_shared<pcl::search::KdTree<pcl::PointXYZ>>();
+    tree_ = std::make_shared<pcl::search::KdTree<pcl::PointXYZ>>();
     
-    smapper_ = std::make_shared<SurfelMapping>();
+    SurfelParams smp_;
+    smapper_ = std::make_shared<SurfelMapping>(smp_);
 
     RCLCPP_INFO(this->get_logger(), "LidarPerceptionNode Started...");
 }
@@ -76,11 +77,18 @@ void LidarPerceptionNode::pointcloud_callback(const sensor_msgs::msg::PointCloud
     cloud_pub_->publish(msg_clean);
 
     normal_estimation();
-
+    
     auto t2 = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> te = t2 - t1;
     std::cout << "Filtering + NE duration: " <<  te.count() << "s." << std::endl;
     std::cout << latest_cloud_->points.size() << std::endl;
+
+    smapper_->set_local_frame(latest_pts_w_nrms_);
+    smapper_->run();
+    std::vector<Surfel2D>& s2ds = smapper_->get_local_surfels();
+    auto t3 = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> tee = t3 - t2;
+    std::cout << "Surfel Extract Duration: " <<  tee.count() << "s." << std::endl;
 
     // TODO: Batch accumulator over N scans using transform information? (Flag to run/wait preprocess on batch)
 
@@ -127,7 +135,7 @@ void LidarPerceptionNode::normal_estimation() {
     // Surface normal estimation 
     pcl::NormalEstimation<pcl::PointXYZ, pcl::Normal> ne;
     ne.setInputCloud(latest_cloud_);
-    ne.setSearchMethod(tree);
+    ne.setSearchMethod(tree_);
     ne.setKSearch(10);
     ne.setViewPoint(latest_pos_.x(), latest_pos_.y(), latest_pos_.z());
     ne.compute(*latest_normals_);
