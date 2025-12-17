@@ -26,8 +26,8 @@ public:
         allocate();
     }
 
-    void set_input_cloud(const pcl::PointCloud<pcl::PointXYZ>& in) {
-        // Set input cloud and construct grid representation based on 
+    void set_input_cloud(const pcl::PointCloud<pcl::PointXYZ>::Ptr& in) {
+        cloud_ = in;
     }
 
     void downsample(const pcl::PointCloud<pcl::PointXYZ>& in, pcl::PointCloud<pcl::PointXYZ>& out) {
@@ -50,6 +50,10 @@ public:
 
 
 private:
+    /* Data */
+    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_;
+
+
     struct Cell {
         pcl::PointXYZ p;
         float r2 = std::numeric_limits<float>::infinity();
