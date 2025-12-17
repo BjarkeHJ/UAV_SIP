@@ -19,7 +19,7 @@ public:
         double max_range = 10.0;
         bool keep_closest = true; // true: keept closes point per block - false: average point per block
 
-        int normal_radius_px = 2;
+        int normal_radius_px = 3;
         float depth_sigma_m = 0.05f; // depth aware similarity for edge aware weights
         float spatial_sigma_px = 1.0f;
         int range_smooth_iters = 3;
@@ -455,7 +455,7 @@ private:
 
     void estimate_normals() {
         normals_out_->clear();
-        normals_out_->reserve(cloud_out_->size());
+        normals_out_->resize(cloud_out_->size());
         const float jump = params_.max_depth_jump_m;
 
         size_t out_i = 0;
