@@ -278,6 +278,7 @@ private:
         cloud_out_->reserve(static_cast<size_t>(Wd_ * Hd_));
         // normals_out_->clear();
         // normals_out_->reserve(static_cast<size_t>(Wd_ * Hd_));
+        std::fill(chosen_uv_.begin(), chosen_uv_.end(), -1);
 
         for (int vd = 0; vd < Hd_; ++vd) {
             for (int ud = 0; ud < Wd_; ++ud) {
@@ -314,6 +315,8 @@ private:
 
     void build_range_image() {
         /* Create 2D Depth Map from point cloud distances from sensor */
+        std::fill(mask_.begin(), mask_.end(), 0);
+
         const int R = std::max(1, params_.normal_radius_px);
         for (int block=0; block<Wd_*Hd_; ++block) {
             const int lin = chosen_uv_[static_cast<size_t>(block)];
@@ -328,7 +331,7 @@ private:
 
             for (int v=v0; v<=v1; ++v) {
                 const size_t row = static_cast<size_t>(v) * W_;
-                for (int u=u0; u<u1; ++u) {
+                for (int u=u0; u<=u1; ++u) {
                     mask_[row + static_cast<size_t>(u)] = 1;
                 }
             }
@@ -372,7 +375,7 @@ private:
             kernel[i] = std::exp(-d * d * inv2_sp);
         }
 
-        std::vector<float> tmp(W_ * H_);
+        std::vector<float> tmp(W_ * H_, std::numeric_limits<float>::quiet_NaN());
         const float inv2_dp = 1.0f / (2.0f * depth_sigma * depth_sigma);
 
         for (int it=0; it < params_.range_smooth_iters; ++it) {
@@ -402,7 +405,9 @@ private:
                     const int u1 = std::min(W_-1, u+R);
 
                     for (int uu=u0; uu<=u1; ++uu) {
-                        const float r = range_filt_[row_base + uu];
+                        const size_t j = row_base + uu;
+                        if (!mask_[j]) continue;
+                        const float r = range_filt_[j];
                         if (!std::isfinite(r)) continue;
 
                         const float dr = r - rc;
@@ -444,7 +449,10 @@ private:
                     float vsum = 0.0f;
 
                     for (int vv=v0; vv<=v1; ++vv) {
-                        const float r = tmp[idx(u,vv)];
+                        const size_t j = idx(u,vv);
+                        if (!mask_[j]) continue;
+
+                        const float r = tmp[j];
                         if (!std::isfinite(r)) continue;
 
                         const float dr = r - rc;
@@ -491,7 +499,9 @@ private:
             // center point
             Eigen::Vector3f Pc;
             float rc;
-            if (!fetch_point(u,v,Pc,rc)) continue;
+            if (!fetch_point(u,v,Pc,rc)) {
+                continue;
+            }
 
             // left, right, up, down
             Eigen::Vector3f Pl, Pr, Pu, Pd;
