@@ -26,11 +26,28 @@ public:
         allocate();
     }
 
+    void set_input_cloud(const pcl::PointCloud<pcl::PointXYZ>& in) {
+        // Set input cloud and construct grid representation based on 
+    }
+
     void downsample(const pcl::PointCloud<pcl::PointXYZ>& in, pcl::PointCloud<pcl::PointXYZ>& out) {
         clearGrid();
         projectToGrid(in);
         reduceGrid(out);
     }
+
+    void normal_estimation() {
+
+    }
+
+    void ground_filtering(const float th) {
+
+    }
+
+    void outlier_removal() {
+
+    }
+
 
 private:
     struct Cell {

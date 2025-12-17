@@ -10,7 +10,7 @@ LidarPerceptionNode::LidarPerceptionNode() : Node("LidarPerceptionNode") {
     pp_params_.height = this->declare_parameter<int>("tof_px_H", 180);
     pp_params_.hfov_deg = this->declare_parameter<double>("tof_fov_h", 106.0f);
     pp_params_.vfov_deg = this->declare_parameter<double>("tof_fov_v", 86.0f);
-    pp_params_.ds_factor = this->declare_parameter<double>("cloud_ds_factor", 1.0f);
+    pp_params_.ds_factor = this->declare_parameter<double>("cloud_ds_factor", 2.0f);
     pp_params_.min_range = this->declare_parameter<double>("tof_min_range", 0.1f);
     pp_params_.max_range = this->declare_parameter<double>("tof_max_range", 10.0f);
     pp_params_.keep_closest = this->declare_parameter<bool>("ds_keep_closest", true);
@@ -145,13 +145,13 @@ void LidarPerceptionNode::normal_estimation() {
     pcl::NormalEstimation<pcl::PointXYZ, pcl::Normal> ne;
     ne.setInputCloud(latest_cloud_);
     ne.setSearchMethod(tree_);
-    ne.setKSearch(10);
+    ne.setKSearch(5);
     ne.setViewPoint(latest_pos_.x(), latest_pos_.y(), latest_pos_.z());
     ne.compute(*latest_normals_);
 
     pcl::concatenateFields(*latest_cloud_, *latest_normals_, *latest_pts_w_nrms_);
 
-    // publishNormals(cloud_w_normals, global_frame_, 0.1);
+    publishNormals(latest_pts_w_nrms_, global_frame_, 0.1);
 }
 
 
