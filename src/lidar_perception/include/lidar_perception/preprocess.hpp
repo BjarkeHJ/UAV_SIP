@@ -105,15 +105,17 @@ public:
         for (size_t i=0; i<cloud_out_->size(); ++i) {
             auto& p = cloud_out_->points[i];
             auto& n = normals_out_->points[i];
-            if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z) || !std::isfinite(n.normal_x) || !std::isfinite(n.normal_y) || !std::isfinite(n.normal_z)) continue;
-
+            if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z)) continue;
             Eigen::Vector3f ps(p.x, p.y, p.z);
-            Eigen::Vector3f ns(n.normal_x, n.normal_y, n.normal_z);
             Eigen::Vector3f pw = R_ws_ * ps + t_ws_;
-            Eigen::Vector3f nw = R_ws_ * ns + t_ws_;
             p.x = pw.x();
             p.y = pw.y();
             p.z = pw.z();
+            
+            if (!std::isfinite(n.normal_x) || !std::isfinite(n.normal_y) || !std::isfinite(n.normal_z)) continue;
+            Eigen::Vector3f ns(n.normal_x, n.normal_y, n.normal_z);
+            Eigen::Vector3f nw = R_ws_ * ns;
+            nw.normalize();
             n.normal_x = nw.x();
             n.normal_y = nw.y();
             n.normal_z = nw.z();
@@ -308,7 +310,6 @@ private:
         }
     }
 
-
     void build_range_image() {
         /* Create 2D Depth Map from point cloud distances from sensor */
         for (int v=0; v<H_; ++v) {
@@ -351,7 +352,7 @@ private:
                     const int v1 = std::min(H_-1, v+R);
 
                     for (int vv=v0; vv<=v1; ++vv) {
-                        for (int uu=u0; uu<u1; ++uu) {
+                        for (int uu=u0; uu<=u1; ++uu) {
                             const float r = tmp[idx(uu,vv)];
                             if (!std::isfinite(r)) continue;
 

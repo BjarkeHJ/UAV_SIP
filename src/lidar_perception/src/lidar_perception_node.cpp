@@ -10,7 +10,7 @@ LidarPerceptionNode::LidarPerceptionNode() : Node("LidarPerceptionNode") {
     pp_params_.height = this->declare_parameter<int>("tof_px_H", 180);
     pp_params_.hfov_deg = this->declare_parameter<double>("tof_fov_h", 106.0f);
     pp_params_.vfov_deg = this->declare_parameter<double>("tof_fov_v", 86.0f);
-    pp_params_.ds_factor = this->declare_parameter<double>("cloud_ds_factor", 2.0f);
+    pp_params_.ds_factor = this->declare_parameter<double>("cloud_ds_factor", 3.0f);
     pp_params_.min_range = this->declare_parameter<double>("tof_min_range", 0.1f);
     pp_params_.max_range = this->declare_parameter<double>("tof_max_range", 10.0f);
     pp_params_.keep_closest = this->declare_parameter<bool>("ds_keep_closest", true);
