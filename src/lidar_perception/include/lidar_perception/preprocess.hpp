@@ -19,10 +19,10 @@ public:
         double max_range = 10.0;
         bool keep_closest = true; // true: keept closes point per block - false: average point per block
 
-        int normal_radius_px = 3;
+        int normal_radius_px = 2;
         float depth_sigma_m = 0.05f; // depth aware similarity for edge aware weights
         float spatial_sigma_px = 1.0f;
-        int range_smooth_iters = 2;
+        int range_smooth_iters = 3;
         float max_depth_jump_m = 0.10f;
         bool orient_towards_sensor = true;
     };
@@ -355,9 +355,9 @@ private:
                     float vsum = 0.0f;
 
                     const int u0 = std::max(0, u-R);
-                    const int u1 = std::max(W_-1, u+R);
+                    const int u1 = std::min(W_-1, u+R);
 
-                    for (int uu=u0; uu<u1; ++uu) {
+                    for (int uu=u0; uu<=u1; ++uu) {
                         const float r = range_filt_[row_base + uu];
                         if (!std::isfinite(r)) continue;
 
@@ -378,7 +378,7 @@ private:
 
             for (int v=0; v<H_; ++v) {
                 const int v0 = std::max(0, v-R);
-                const int v1 = std::max(H_-1, v+R);
+                const int v1 = std::min(H_-1, v+R);
 
                 for (int u=0; u<W_; ++u) {
                     const size_t center_idx = idx(u,v);
@@ -392,14 +392,14 @@ private:
                     float wsum = 0.0f;
                     float vsum = 0.0f;
 
-                    for (int vv=v0; vv<v1; ++vv) {
+                    for (int vv=v0; vv<=v1; ++vv) {
                         const float r = tmp[idx(u,vv)];
                         if (!std::isfinite(r)) continue;
 
                         const float dr = r - rc;
                         if (std::fabs(dr) > max_jump) continue;
 
-                        const float w_spatial = kernel[vv - v - R];
+                        const float w_spatial = kernel[vv - v + R];
                         const float w_depth = std::exp(-dr * dr * inv2_dp);
                         const float w = w_spatial * w_depth;
 

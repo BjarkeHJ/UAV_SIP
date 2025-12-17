@@ -133,32 +133,13 @@ void LidarPerceptionNode::filtering(const sensor_msgs::msg::PointCloud2::SharedP
     std::cout << "Downsample: " << t23.count() << "s." << std::endl;
     std::cout << "Transform: " << t34.count() << "s." << std::endl;
 
-
-
-    // // Transform Pointcloud  
-    // Eigen::Matrix4f T = Eigen::Matrix4f::Identity();
-    // T(0, 3) = latest_pos_.x();
-    // T(1, 3) = latest_pos_.y();
-    // T(2, 3) = latest_pos_.z();
-    // Eigen::Quaternionf q(latest_q_.w(), latest_q_.x(), latest_q_.y(), latest_q_.z());
-    // T.block<3,3>(0,0) = q.toRotationMatrix();
-    // pcl::transformPointCloud(*latest_cloud_, *cloud_buff_, T);
-
-    // // Remove ground points
-    // pcl::PassThrough<pcl::PointXYZ> pass;
-    // pass.setInputCloud(cloud_buff_);
-    // pass.setFilterFieldName("z");
-    // pass.setFilterLimits(-10.0, gnd_th);
-    // pass.setNegative(true);
-    // pass.filter(*latest_cloud_);
-
     // Statistical outlier removal
-    // pcl::StatisticalOutlierRemoval<pcl::PointXYZ> sor;
-    // sor.setInputCloud(latest_cloud_);
-    // sor.setMeanK(10);
-    // sor.setStddevMulThresh (0.5);
-    // sor.filter(*cloud_buff_);
-    // latest_cloud_ = cloud_buff_;
+    pcl::StatisticalOutlierRemoval<pcl::PointXYZ> sor;
+    sor.setInputCloud(latest_cloud_);
+    sor.setMeanK(10);
+    sor.setStddevMulThresh (0.5);
+    sor.filter(*cloud_buff_);
+    latest_cloud_ = cloud_buff_;
 }
 
 void LidarPerceptionNode::normal_estimation() {
