@@ -42,6 +42,8 @@ public:
     void set_world_transform(const Eigen::Vector3f& t, const Eigen::Quaternionf& q) {
         t_ws_ = t;
         R_ws_ = q.toRotationMatrix();
+        gnd_R_z_ = R_ws_.row(2);
+        gnd_t_z_ = t_ws_.z();
         have_tf_ = true;
     }
 
@@ -68,7 +70,7 @@ public:
 
     void normal_estimation() {
         build_range_image();
-        // smooth_range_image();
+        smooth_range_image();
         estimate_normals();
     }
 
@@ -101,6 +103,8 @@ public:
             return;
         }
 
+        cloud_w_normals_out_->resize(cloud_out_->size());
+
         for (size_t i=0; i<cloud_out_->size(); ++i) {
             auto& p = cloud_out_->points[i];
             auto& n = normals_out_->points[i];
@@ -114,26 +118,18 @@ public:
             if (!std::isfinite(n.normal_x) || !std::isfinite(n.normal_y) || !std::isfinite(n.normal_z)) continue;
             Eigen::Vector3f ns(n.normal_x, n.normal_y, n.normal_z);
             Eigen::Vector3f nw = R_ws_ * ns;
-            nw.normalize();
-            n.normal_x = nw.x();
-            n.normal_y = nw.y();
-            n.normal_z = nw.z();
-        }
+            float norm_inv = 1.0f / nw.norm();
+            n.normal_x = nw.x() * norm_inv;
+            n.normal_y = nw.y() * norm_inv;
+            n.normal_z = nw.z() * norm_inv;
 
-        cloud_w_normals_out_->clear();
-        cloud_w_normals_out_->resize(cloud_out_->size());
-
-        for (size_t i=0; i<cloud_out_->size(); ++i) {
-            const auto& p = cloud_out_->points[i];
-            const auto& n = normals_out_->points[i];
-            pcl::PointNormal pn;
+            pcl::PointNormal& pn = cloud_w_normals_out_->points[i];
             pn.x = p.x;
             pn.y = p.y;
             pn.z = p.z;
             pn.normal_x = n.normal_x;
             pn.normal_y = n.normal_y;
             pn.normal_z = n.normal_z;
-            cloud_w_normals_out_->points[i] = pn;
         }
 
         cloud_w_normals_out_->width = static_cast<uint32_t>(cloud_out_->size());
@@ -165,11 +161,15 @@ private:
     int Wd_{0}, Hd_{0};
     float yaw_min_, yaw_max_, pitch_min_, pitch_max_;
     float yaw_span_, pitch_span_;
-
+    float inv_yaw_span_, inv_pitch_span_;
+    float min_range_sq_, max_range_sq_;
+    
     uint32_t frame_id_{1}; // unique id of the scan
-
+    
     Eigen::Matrix3f R_ws_ = Eigen::Matrix3f::Identity();
     Eigen::Vector3f t_ws_ = Eigen::Vector3f::Zero();
+    Eigen::Vector3f gnd_R_z_;
+    float gnd_t_z_;
     bool have_tf_ = false;
 
     void allocate() {
@@ -191,6 +191,11 @@ private:
         yaw_span_ = hfov;
         pitch_span_ = vfov;
     
+        inv_yaw_span_ = (W_ - 1) / yaw_span_;
+        inv_pitch_span_ = (H_ - 1) / pitch_span_;
+        min_range_sq_ = params_.min_range * params_.min_range;
+        max_range_sq_ = params_.max_range * params_.max_range;
+
         range_.assign(static_cast<size_t>(W_ * H_), std::numeric_limits<float>::quiet_NaN());
         range_filt_ = range_;
         normals_grid_.resize(static_cast<size_t>(W_ * H_));
@@ -216,20 +221,20 @@ private:
             if (!finite(p)) continue;
 
             const float r2 = p.x*p.x + p.y*p.y + p.z*p.z;
-            const float r = std::sqrt(r2);
 
             // range check 
-            if (r < params_.min_range || r > params_.max_range) continue;
+            if (r2 < min_range_sq_ || r2 > max_range_sq_) continue;
 
             // gnd check 
             if (params_.enable_gnd_filter && have_tf_) {
-                Eigen::Vector3f ps(p.x, p.y, p.z);
-                float z_world = (R_ws_ * ps + t_ws_).z();
+                // const float z_world = R_ws_(2,0)*p.x + R_ws_(2,1)*p.y + R_ws_(2,2)*p.z + t_ws_.z();
+                const float z_world = gnd_R_z_.x() * p.x + gnd_R_z_.y() * p.y + gnd_R_z_.z() * p.z + gnd_t_z_;
                 if (z_world < params_.gnd_z_min) continue;
             }
 
             const float yaw = std::atan2(p.y, p.x);
-            const float pitch = std::atan2(p.z, std::sqrt(p.x*p.x + p.y*p.y));
+            const float xy_dist = std::sqrt(p.x * p.x + p.y * p.y);
+            const float pitch = std::atan2(p.z, xy_dist);
 
             if (yaw < yaw_min_ || yaw > yaw_max_ || pitch < pitch_min_ || pitch > pitch_max_) continue;
 
@@ -268,16 +273,6 @@ private:
         normals_out_->clear();
         normals_out_->reserve(static_cast<size_t>(Wd_ * Hd_));
 
-        // if (Wd_ == W_ && Hd_ == H_) {
-        //     // not reduced (ds_factor = 1)
-        //     // out = *cloud_;
-        //     for (const auto& c : grid_) {
-        //         cloud_out_->push_back(c.p);
-        //         // same for normals?
-        //     }
-        //     return;
-        // }
-
         for (int vd = 0; vd < Hd_; ++vd) {
             for (int ud = 0; ud < Wd_; ++ud) {
                 // Cell best;
@@ -286,12 +281,11 @@ private:
                 int best_v = -1;
                 float best_r2 = std::numeric_limits<float>::infinity();
 
-                for (int dv = 0; dv < ds_; ++dv) {
-                    for (int du = 0; du < ds_; ++du) {
-                        const int u = ud * ds_ + du;
-                        const int v = vd * ds_ + dv;
-                        if (u >= W_ || v >= H_) continue;
+                const int v_end = std::min((vd + 1) * ds_, H_);
+                const int u_end = std::min((ud + 1) * ds_, W_);
 
+                for (int v = vd*ds_; v < v_end; ++v) {
+                    for (int u = ud*ds_; u < u_end; ++u) {
                         const Cell& c = grid_[idx(u,v)];
                         if (!is_valid(c)) continue;
                         if (!found || c.r2 < best_r2) {
@@ -327,54 +321,147 @@ private:
 
     void smooth_range_image() {
         if (params_.range_smooth_iters <= 0) return;
-
         const int R = std::max(1, params_.normal_radius_px);
-        const float inv2_sp = 1.0f / (2.0f * params_.spatial_sigma_px * params_.spatial_sigma_px);
-        const float inv2_dp = 1.0f / (2.0f * params_.depth_sigma_m * params_.depth_sigma_m);
+        const float sigma = params_.spatial_sigma_px;
+        const float depth_sigma = params_.depth_sigma_m;
+        const float max_jump = params_.max_depth_jump_m;
 
-        std::vector<float> tmp = range_filt_;
+        const int kernel_size = 2 * R + 1;
+        std::vector<float> kernel(kernel_size);
+        const float inv2_sp = 1.0f / (2.0f * sigma * sigma);
 
-        for (int it=0; it<params_.range_smooth_iters; ++it) {
+        for (int i=0; i<kernel_size; ++i) {
+            const float d = float(i - R);
+            kernel[i] = std::exp(-d * d * inv2_sp);
+        }
+
+        std::vector<float> tmp(W_ * H_);
+        const float inv2_dp = 1.0f / (2.0f * depth_sigma * depth_sigma);
+
+        for (int it=0; it < params_.range_smooth_iters; ++it) {
             for (int v=0; v<H_; ++v) {
+                const size_t row_base = v * W_;
+
                 for (int u=0; u<W_; ++u) {
-                    const float rc = tmp[idx(u,v)];
+                    const size_t center_idx = row_base + u;
+                    const float rc = range_filt_[center_idx];
+
                     if (!std::isfinite(rc)) {
-                        range_filt_[idx(u,v)] = rc; // set infinite val
+                        tmp[center_idx] = rc;
                         continue;
                     }
 
                     float wsum = 0.0f;
                     float vsum = 0.0f;
-                    
+
                     const int u0 = std::max(0, u-R);
-                    const int u1 = std::min(W_-1, u+R);
-                    const int v0 = std::max(0, v-R);
-                    const int v1 = std::min(H_-1, v+R);
+                    const int u1 = std::max(W_-1, u+R);
 
-                    for (int vv=v0; vv<=v1; ++vv) {
-                        for (int uu=u0; uu<=u1; ++uu) {
-                            const float r = tmp[idx(uu,vv)];
-                            if (!std::isfinite(r)) continue;
+                    for (int uu=u0; uu<u1; ++uu) {
+                        const float r = range_filt_[row_base + uu];
+                        if (!std::isfinite(r)) continue;
 
-                            const float du = float(uu - u);
-                            const float dv = float(vv - v);
-                            const float ds2 = du*du + dv*dv;
+                        const float dr = r - rc;
+                        if (std::fabs(dr) > max_jump) continue;
 
-                            const float dr = r - rc;
+                        const float w_spatial = kernel[uu - u + R];
+                        const float w_depth = std::exp(-dr * dr * inv2_dp);
+                        const float w = w_spatial * w_depth;
 
-                            // gate based on depth jump
-                            if (std::fabs(dr) > params_.max_depth_jump_m) continue;
-
-                            const float w = std::exp(-ds2 * inv2_sp) * std::exp(-(dr*dr) * inv2_dp);
-                            wsum += w;
-                            vsum += w * r;
-                        }
+                        wsum += w;
+                        vsum += w * r;
                     }
-                    range_filt_[idx(u,v)] = (wsum > 1e-6f) ? (vsum / wsum) : rc;
+
+                    tmp[center_idx] = (wsum > 1e-6f) ? (vsum / wsum) : rc;
                 }
             }
-            tmp = range_filt_;
+
+            for (int v=0; v<H_; ++v) {
+                const int v0 = std::max(0, v-R);
+                const int v1 = std::max(H_-1, v+R);
+
+                for (int u=0; u<W_; ++u) {
+                    const size_t center_idx = idx(u,v);
+                    const float rc = tmp[center_idx];
+
+                    if (!std::isfinite(rc)) {
+                        range_filt_[center_idx] = rc;
+                        continue;
+                    }
+
+                    float wsum = 0.0f;
+                    float vsum = 0.0f;
+
+                    for (int vv=v0; vv<v1; ++vv) {
+                        const float r = tmp[idx(u,vv)];
+                        if (!std::isfinite(r)) continue;
+
+                        const float dr = r - rc;
+                        if (std::fabs(dr) > max_jump) continue;
+
+                        const float w_spatial = kernel[vv - v - R];
+                        const float w_depth = std::exp(-dr * dr * inv2_dp);
+                        const float w = w_spatial * w_depth;
+
+                        wsum += w;
+                        vsum += w * r;
+                    }
+
+                    range_filt_[center_idx] = (wsum > 1e-6f) ? (vsum / wsum) : rc;
+                }
+            }
         }
+        
+        
+        // if (params_.range_smooth_iters <= 0) return;
+
+        // const int R = std::max(1, params_.normal_radius_px);
+        // const float inv2_sp = 1.0f / (2.0f * params_.spatial_sigma_px * params_.spatial_sigma_px);
+        // const float inv2_dp = 1.0f / (2.0f * params_.depth_sigma_m * params_.depth_sigma_m);
+
+        // std::vector<float> tmp = range_filt_;
+
+        // for (int it=0; it<params_.range_smooth_iters; ++it) {
+        //     for (int v=0; v<H_; ++v) {
+        //         for (int u=0; u<W_; ++u) {
+        //             const float rc = tmp[idx(u,v)];
+        //             if (!std::isfinite(rc)) {
+        //                 range_filt_[idx(u,v)] = rc; // set infinite val
+        //                 continue;
+        //             }
+
+        //             float wsum = 0.0f;
+        //             float vsum = 0.0f;
+                    
+        //             const int u0 = std::max(0, u-R);
+        //             const int u1 = std::min(W_-1, u+R);
+        //             const int v0 = std::max(0, v-R);
+        //             const int v1 = std::min(H_-1, v+R);
+
+        //             for (int vv=v0; vv<=v1; ++vv) {
+        //                 for (int uu=u0; uu<=u1; ++uu) {
+        //                     const float r = tmp[idx(uu,vv)];
+        //                     if (!std::isfinite(r)) continue;
+
+        //                     const float du = float(uu - u);
+        //                     const float dv = float(vv - v);
+        //                     const float ds2 = du*du + dv*dv;
+
+        //                     const float dr = r - rc;
+
+        //                     // gate based on depth jump
+        //                     if (std::fabs(dr) > params_.max_depth_jump_m) continue;
+
+        //                     const float w = std::exp(-ds2 * inv2_sp) * std::exp(-(dr*dr) * inv2_dp);
+        //                     wsum += w;
+        //                     vsum += w * r;
+        //                 }
+        //             }
+        //             range_filt_[idx(u,v)] = (wsum > 1e-6f) ? (vsum / wsum) : rc;
+        //         }
+        //     }
+        //     tmp = range_filt_;
+        // }
     }
 
     bool fetch_point(int u, int v, Eigen::Vector3f& P, float& r) const {
@@ -391,16 +478,15 @@ private:
 
         for (int v=0; v<H_; ++v) {
             for (int u=0; u<W_; ++u) {
-                pcl::Normal n;
+                const size_t i = idx(u,v);
+
+                pcl::Normal& n = normals_grid_[i];
                 n.normal_x = n.normal_y = n.normal_z = std::numeric_limits<float>::quiet_NaN();
 
                 // center point
                 Eigen::Vector3f Pc;
                 float rc;
-                if (!fetch_point(u, v, Pc, rc)) {
-                    normals_grid_[idx(u,v)] = n;
-                    continue;
-                }
+                if (!fetch_point(u, v, Pc, rc)) continue;
 
                 // left, right, up, down
                 Eigen::Vector3f Pl, Pr, Pu, Pd;
@@ -421,7 +507,6 @@ private:
                     tx = (Pc - Pl);
                 }
                 else {
-                    normals_grid_[idx(u,v)] = n;
                     continue;
                 }
 
@@ -435,31 +520,26 @@ private:
                     ty = (Pc - Pu);
                 }
                 else {
-                    normals_grid_[idx(u,v)] = n;
                     continue;
                 }
 
                 Eigen::Vector3f nn = tx.cross(ty);
                 const float norm = nn.norm();
-                if (norm < 1e-6f) {
-                    normals_grid_[idx(u,v)] = n;
-                    continue;
-                }
+                if (norm < 1e-6f) continue;
 
-                nn /= norm;
+                const float inv_norm = 1.0f / norm;
+                nn *= inv_norm;
 
-                if (params_.orient_towards_sensor) {
-                    if (nn.dot(Pc) > 0.0f) nn = -nn;
+                if (params_.orient_towards_sensor && nn.dot(Pc) > 0.0f) {
+                    nn = -nn;
                 }
 
                 n.normal_x = nn.x();
                 n.normal_y = nn.y();
                 n.normal_z = nn.z();
-                normals_grid_[idx(u,v)] = n;
             }
         }
     }
-
 
 };
 
