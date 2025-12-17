@@ -7,6 +7,9 @@
 class CloudPreprocess {
 public:
     struct Params {
+        bool enable_gnd_filter = true;
+        float gnd_z_min = 0.25;
+
         int width = 240;
         int height = 180;
         double hfov_deg = 106.0;
@@ -16,11 +19,11 @@ public:
         double max_range = 10.0;
         bool keep_closest = true; // true: keept closes point per block - false: average point per block
 
-        int normal_radius_px = 1;
-        float depth_sigma_m = 0.15f; // depth aware similarity for edge aware weights
+        int normal_radius_px = 3;
+        float depth_sigma_m = 0.05f; // depth aware similarity for edge aware weights
         float spatial_sigma_px = 1.0f;
-        int range_smooth_iters = 1;
-        float max_depth_jump_m = 0.30f;
+        int range_smooth_iters = 2;
+        float max_depth_jump_m = 0.10f;
         bool orient_towards_sensor = true;
     };
 
@@ -36,6 +39,12 @@ public:
         allocate();
     }
 
+    void set_world_transform(const Eigen::Vector3f& t, const Eigen::Quaternionf& q) {
+        t_ws_ = t;
+        R_ws_ = q.toRotationMatrix();
+        have_tf_ = true;
+    }
+
     void set_input_cloud(const pcl::PointCloud<pcl::PointXYZ>::Ptr& in) {
         if (!in || in->points.empty()) {
             std::cout << "[PREPROCESS] Error: Nullptr or empty cloud!" << std::endl;
@@ -48,9 +57,6 @@ public:
 
     void downsample() {
         /* Requires normal estimation ATM */
-
-        // clear_grid();
-        // project_to_grid(in);
         if (!cloud_ || cloud_->points.empty()) {
             std::cout << "[PREPROCESS] Error: No point cloud set!" << std::endl;
             // raise error here instead
@@ -78,10 +84,61 @@ public:
 
     void get_points_with_normals(pcl::PointCloud<pcl::PointNormal>::Ptr& cloud_pn) {
         // Reflect if downsample has been called prior to getting
-        pcl::concatenateFields(*cloud_out_, *normals_out_, *cloud_w_normals_out_);
+        // pcl::concatenateFields(*cloud_out_, *normals_out_, *cloud_w_normals_out_);
         cloud_pn = cloud_w_normals_out_;
     }
 
+    void transform_output_to_world() {
+        if (!have_tf_) {
+            std::cout << "ERROR" << std::endl;
+            return;
+        }
+
+        if (!cloud_out_ || cloud_out_->empty()) {
+            return;
+        }
+
+        if (!normals_out_ || normals_out_->size() != cloud_out_->size()) {
+            return;
+        }
+
+        for (size_t i=0; i<cloud_out_->size(); ++i) {
+            auto& p = cloud_out_->points[i];
+            auto& n = normals_out_->points[i];
+            if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z) || !std::isfinite(n.normal_x) || !std::isfinite(n.normal_y) || !std::isfinite(n.normal_z)) continue;
+
+            Eigen::Vector3f ps(p.x, p.y, p.z);
+            Eigen::Vector3f ns(n.normal_x, n.normal_y, n.normal_z);
+            Eigen::Vector3f pw = R_ws_ * ps + t_ws_;
+            Eigen::Vector3f nw = R_ws_ * ns + t_ws_;
+            p.x = pw.x();
+            p.y = pw.y();
+            p.z = pw.z();
+            n.normal_x = nw.x();
+            n.normal_y = nw.y();
+            n.normal_z = nw.z();
+        }
+
+        cloud_w_normals_out_->clear();
+        cloud_w_normals_out_->resize(cloud_out_->size());
+
+        for (size_t i=0; i<cloud_out_->size(); ++i) {
+            const auto& p = cloud_out_->points[i];
+            const auto& n = normals_out_->points[i];
+            pcl::PointNormal pn;
+            pn.x = p.x;
+            pn.y = p.y;
+            pn.z = p.z;
+            pn.normal_x = n.normal_x;
+            pn.normal_y = n.normal_y;
+            pn.normal_z = n.normal_z;
+            cloud_w_normals_out_->points[i] = pn;
+        }
+
+        cloud_w_normals_out_->width = static_cast<uint32_t>(cloud_out_->size());
+        cloud_w_normals_out_->height = 1;
+        cloud_w_normals_out_->is_dense = false;
+    }
 
 private:
     struct Cell {
@@ -107,6 +164,10 @@ private:
     int Wd_{0}, Hd_{0};
     float yaw_min_, yaw_max_, pitch_min_, pitch_max_;
     float yaw_span_, pitch_span_;
+
+    Eigen::Matrix3f R_ws_ = Eigen::Matrix3f::Identity();
+    Eigen::Vector3f t_ws_ = Eigen::Vector3f::Zero();
+    bool have_tf_ = false;
 
     void allocate() {
         W_ = params_.width;
@@ -153,7 +214,15 @@ private:
             const float r2 = p.x*p.x + p.y*p.y + p.z*p.z;
             const float r = std::sqrt(r2);
 
+            // range check 
             if (r < params_.min_range || r > params_.max_range) continue;
+
+            // gnd check 
+            if (params_.enable_gnd_filter && have_tf_) {
+                Eigen::Vector3f ps(p.x, p.y, p.z);
+                float z_world = (R_ws_ * ps + t_ws_).z();
+                if (z_world < params_.gnd_z_min) continue;
+            }
 
             const float yaw = std::atan2(p.y, p.x);
             const float pitch = std::atan2(p.z, std::sqrt(p.x*p.x + p.y*p.y));
@@ -282,7 +351,7 @@ private:
                     const int v1 = std::min(H_-1, v+R);
 
                     for (int vv=v0; vv<=v1; ++vv) {
-                        for (int uu=u0; uu<u0; ++uu) {
+                        for (int uu=u0; uu<u1; ++uu) {
                             const float r = tmp[idx(uu,vv)];
                             if (!std::isfinite(r)) continue;
 
@@ -347,7 +416,7 @@ private:
                 else if (okR) {
                     tx = (Pr - Pc);
                 }
-                else if (okD) {
+                else if (okL) {
                     tx = (Pc - Pl);
                 }
                 else {
