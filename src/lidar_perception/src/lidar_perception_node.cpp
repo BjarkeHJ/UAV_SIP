@@ -158,12 +158,12 @@ void LidarPerceptionNode::filtering(const sensor_msgs::msg::PointCloud2::SharedP
     // std::cout << "Transform: " << t34.count() << "s." << std::endl;
 
     // Statistical outlier removal
-    pcl::StatisticalOutlierRemoval<pcl::PointXYZ> sor;
-    sor.setInputCloud(latest_cloud_);
-    sor.setMeanK(10);
-    sor.setStddevMulThresh (0.5);
-    sor.filter(*cloud_buff_);
-    latest_cloud_ = cloud_buff_;
+    // pcl::StatisticalOutlierRemoval<pcl::PointXYZ> sor;
+    // sor.setInputCloud(latest_cloud_);
+    // sor.setMeanK(10);
+    // sor.setStddevMulThresh (0.5);
+    // sor.filter(*cloud_buff_);
+    // latest_cloud_ = cloud_buff_;
 }
 
 void LidarPerceptionNode::normal_estimation() {
