@@ -172,6 +172,9 @@ private:
     float gnd_t_z_;
     bool have_tf_ = false;
 
+    std::vector<int> chosen_uv_;
+    std::vector<uint8_t> mask_;
+
     void allocate() {
         W_ = params_.width;
         H_ = params_.height;
@@ -199,6 +202,9 @@ private:
         range_.assign(static_cast<size_t>(W_ * H_), std::numeric_limits<float>::quiet_NaN());
         range_filt_ = range_;
         normals_grid_.resize(static_cast<size_t>(W_ * H_));
+        
+        chosen_uv_.assign(static_cast<size_t>(Wd_ * Hd_), -1);
+        mask_.assign(static_cast<size_t>(W_*H_), 0);
     }
 
     inline void invalidate_all() {
@@ -270,8 +276,8 @@ private:
     void reduce_grid() {
         cloud_out_->clear();
         cloud_out_->reserve(static_cast<size_t>(Wd_ * Hd_));
-        normals_out_->clear();
-        normals_out_->reserve(static_cast<size_t>(Wd_ * Hd_));
+        // normals_out_->clear();
+        // normals_out_->reserve(static_cast<size_t>(Wd_ * Hd_));
 
         for (int vd = 0; vd < Hd_; ++vd) {
             for (int ud = 0; ud < Wd_; ++ud) {
@@ -298,16 +304,47 @@ private:
                 }
 
                 if (!found) continue;
+                const int block_idx = vd * Wd_ + ud;
+                chosen_uv_[block_idx] = static_cast<int>(idx(best_u, best_v));
                 cloud_out_->push_back(grid_[idx(best_u, best_v)].p);
-                normals_out_->push_back(normals_grid_[idx(best_u, best_v)]);
+                // normals_out_->push_back(normals_grid_[idx(best_u, best_v)]);
             }
         }
     }
 
     void build_range_image() {
         /* Create 2D Depth Map from point cloud distances from sensor */
+        const int R = std::max(1, params_.normal_radius_px);
+        for (int block=0; block<Wd_*Hd_; ++block) {
+            const int lin = chosen_uv_[static_cast<size_t>(block)];
+            if (lin < 0) continue;
+            const int uc = lin % W_;
+            const int vc = lin / W_;
+
+            const int u0 = std::max(0, uc-R);
+            const int u1 = std::min(W_-1, uc+R);
+            const int v0 = std::max(0, vc-R);
+            const int v1 = std::min(H_-1, vc+R);
+
+            for (int v=v0; v<=v1; ++v) {
+                const size_t row = static_cast<size_t>(v) * W_;
+                for (int u=u0; u<u1; ++u) {
+                    mask_[row + static_cast<size_t>(u)] = 1;
+                }
+            }
+
+        }
+
         for (int v=0; v<H_; ++v) {
+            const size_t row = static_cast<size_t>(v) * W_;
             for (int u=0; u<W_; ++u) {
+                const size_t i = row + static_cast<size_t>(u);
+
+                if (!mask_[i]) {
+                    range_[i] = std::numeric_limits<float>::quiet_NaN();
+                    continue;
+                }
+
                 const Cell& c = grid_[idx(u,v)];
                 if (!is_valid(c)) {
                     range_[idx(u,v)] = std::numeric_limits<float>::quiet_NaN();
@@ -339,11 +376,18 @@ private:
         const float inv2_dp = 1.0f / (2.0f * depth_sigma * depth_sigma);
 
         for (int it=0; it < params_.range_smooth_iters; ++it) {
+            // horizontal
             for (int v=0; v<H_; ++v) {
                 const size_t row_base = v * W_;
 
                 for (int u=0; u<W_; ++u) {
                     const size_t center_idx = row_base + u;
+
+                    if (!mask_[center_idx]) {
+                        tmp[center_idx] = std::numeric_limits<float>::quiet_NaN();
+                        continue;
+                    }
+
                     const float rc = range_filt_[center_idx];
 
                     if (!std::isfinite(rc)) {
@@ -376,12 +420,19 @@ private:
                 }
             }
 
+            // vertical 
             for (int v=0; v<H_; ++v) {
                 const int v0 = std::max(0, v-R);
                 const int v1 = std::min(H_-1, v+R);
 
                 for (int u=0; u<W_; ++u) {
                     const size_t center_idx = idx(u,v);
+                    
+                    if (!mask_[center_idx]) {
+                        range_filt_[center_idx] = std::numeric_limits<float>::quiet_NaN();
+                        continue;
+                    }
+
                     const float rc = tmp[center_idx];
 
                     if (!std::isfinite(rc)) {
@@ -423,71 +474,139 @@ private:
     }
 
     void estimate_normals() {
+        normals_out_->clear();
+        normals_out_->reserve(cloud_out_->size());
         const float jump = params_.max_depth_jump_m;
 
-        for (int v=0; v<H_; ++v) {
-            for (int u=0; u<W_; ++u) {
-                const size_t i = idx(u,v);
+        for (size_t k=0; k<chosen_uv_.size(); ++k) {
+            const int lin = chosen_uv_[k];
+            if (lin < 0) continue;
 
-                pcl::Normal& n = normals_grid_[i];
-                n.normal_x = n.normal_y = n.normal_z = std::numeric_limits<float>::quiet_NaN();
+            pcl::Normal& n = normals_grid_[lin];
+            n.normal_x = n.normal_y = n.normal_z = std::numeric_limits<float>::quiet_NaN();
+            
+            const int u = lin % W_;
+            const int v = lin / W_;
+            
+            // center point
+            Eigen::Vector3f Pc;
+            float rc;
+            if (!fetch_point(u,v,Pc,rc)) continue;
 
-                // center point
-                Eigen::Vector3f Pc;
-                float rc;
-                if (!fetch_point(u, v, Pc, rc)) continue;
+            // left, right, up, down
+            Eigen::Vector3f Pl, Pr, Pu, Pd;
+            float rl, rr, ru, rd;
+            bool okL = (u > 0) && fetch_point(u-1, v, Pl, rl) && (std::fabs(rl - rc) <= jump);
+            bool okR = (u < W_-1) && fetch_point(u+1, v, Pr, rr) && (std::fabs(rr - rc) <= jump);
+            bool okU = (v > 0) && fetch_point(u, v-1, Pu, ru) && (std::fabs(ru - rc) <= jump);
+            bool okD = (v < H_-1) && fetch_point(u, v+1, Pd, rd) && (std::fabs(rd - rc) <= jump);
 
-                // left, right, up, down
-                Eigen::Vector3f Pl, Pr, Pu, Pd;
-                float rl, rr, ru, rd;
-                bool okL = (u > 0) && fetch_point(u-1, v, Pl, rl) && (std::fabs(rl - rc) <= jump);
-                bool okR = (u < W_-1) && fetch_point(u+1, v, Pr, rr) && (std::fabs(rr - rc) <= jump);
-                bool okU = (v > 0) && fetch_point(u, v-1, Pu, ru) && (std::fabs(ru - rc) <= jump);
-                bool okD = (v < H_-1) && fetch_point(u, v+1, Pd, rd) && (std::fabs(rd - rc) <= jump);
-
-                Eigen::Vector3f tx, ty;
-                if (okL && okR) {
-                    tx = (Pr - Pl);
-                }
-                else if (okR) {
-                    tx = (Pr - Pc);
-                }
-                else if (okL) {
-                    tx = (Pc - Pl);
-                }
-                else {
-                    continue;
-                }
-
-                if (okU && okD) {
-                    ty = (Pd - Pu);
-                }
-                else if (okD) {
-                    ty = (Pd - Pc);
-                }
-                else if (okU) {
-                    ty = (Pc - Pu);
-                }
-                else {
-                    continue;
-                }
-
-                Eigen::Vector3f nn = tx.cross(ty);
-                const float norm = nn.norm();
-                if (norm < 1e-6f) continue;
-
-                const float inv_norm = 1.0f / norm;
-                nn *= inv_norm;
-
-                if (params_.orient_towards_sensor && nn.dot(Pc) > 0.0f) {
-                    nn = -nn;
-                }
-
-                n.normal_x = nn.x();
-                n.normal_y = nn.y();
-                n.normal_z = nn.z();
+            Eigen::Vector3f tx, ty;
+            if (okL && okR) {
+                tx = (Pr - Pl);
             }
+            else if (okR) {
+                tx = (Pr - Pc);
+            }
+            else if (okL) {
+                tx = (Pc - Pl);
+            }
+            else {
+                continue;
+            }
+
+            if (okU && okD) {
+                ty = (Pd - Pu);
+            }
+            else if (okD) {
+                ty = (Pd - Pc);
+            }
+            else if (okU) {
+                ty = (Pc - Pu);
+            }
+            else {
+                continue;
+            }
+
+            Eigen::Vector3f nn = tx.cross(ty);
+            const float norm = nn.norm();
+            if (norm < 1e-6f) continue;
+
+            const float inv_norm = 1.0f / norm;
+            nn *= inv_norm;
+
+            if (params_.orient_towards_sensor && nn.dot(Pc) > 0.0f) {
+                nn = -nn;
+            }
+
+            n.normal_x = nn.x();
+            n.normal_y = nn.y();
+            n.normal_z = nn.z();
         }
+
+    //     for (int v=0; v<H_; ++v) {
+    //         for (int u=0; u<W_; ++u) {
+
+    //             const size_t i = idx(u,v);
+    //             pcl::Normal& n = normals_grid_[i];
+    //             n.normal_x = n.normal_y = n.normal_z = std::numeric_limits<float>::quiet_NaN();
+
+    //             // center point
+    //             Eigen::Vector3f Pc;
+    //             float rc;
+    //             if (!fetch_point(u, v, Pc, rc)) continue;
+
+    //             // left, right, up, down
+    //             Eigen::Vector3f Pl, Pr, Pu, Pd;
+    //             float rl, rr, ru, rd;
+    //             bool okL = (u > 0) && fetch_point(u-1, v, Pl, rl) && (std::fabs(rl - rc) <= jump);
+    //             bool okR = (u < W_-1) && fetch_point(u+1, v, Pr, rr) && (std::fabs(rr - rc) <= jump);
+    //             bool okU = (v > 0) && fetch_point(u, v-1, Pu, ru) && (std::fabs(ru - rc) <= jump);
+    //             bool okD = (v < H_-1) && fetch_point(u, v+1, Pd, rd) && (std::fabs(rd - rc) <= jump);
+
+    //             Eigen::Vector3f tx, ty;
+    //             if (okL && okR) {
+    //                 tx = (Pr - Pl);
+    //             }
+    //             else if (okR) {
+    //                 tx = (Pr - Pc);
+    //             }
+    //             else if (okL) {
+    //                 tx = (Pc - Pl);
+    //             }
+    //             else {
+    //                 continue;
+    //             }
+
+    //             if (okU && okD) {
+    //                 ty = (Pd - Pu);
+    //             }
+    //             else if (okD) {
+    //                 ty = (Pd - Pc);
+    //             }
+    //             else if (okU) {
+    //                 ty = (Pc - Pu);
+    //             }
+    //             else {
+    //                 continue;
+    //             }
+
+    //             Eigen::Vector3f nn = tx.cross(ty);
+    //             const float norm = nn.norm();
+    //             if (norm < 1e-6f) continue;
+
+    //             const float inv_norm = 1.0f / norm;
+    //             nn *= inv_norm;
+
+    //             if (params_.orient_towards_sensor && nn.dot(Pc) > 0.0f) {
+    //                 nn = -nn;
+    //             }
+
+    //             n.normal_x = nn.x();
+    //             n.normal_y = nn.y();
+    //             n.normal_z = nn.z();
+    //         }
+    //     }
     }
 
 };

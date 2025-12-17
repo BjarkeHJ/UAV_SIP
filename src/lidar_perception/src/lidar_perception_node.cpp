@@ -115,9 +115,9 @@ void LidarPerceptionNode::filtering(const sensor_msgs::msg::PointCloud2::SharedP
     auto t0 = std::chrono::high_resolution_clock::now();
     preproc_->set_input_cloud(cloud_buff_);
     auto t1 = std::chrono::high_resolution_clock::now();
-    preproc_->normal_estimation();
-    auto t2 = std::chrono::high_resolution_clock::now();
     preproc_->downsample();
+    auto t2 = std::chrono::high_resolution_clock::now();
+    preproc_->normal_estimation();
     auto t3 = std::chrono::high_resolution_clock::now();
     preproc_->transform_output_to_world();
     auto t4 = std::chrono::high_resolution_clock::now();
@@ -132,6 +132,30 @@ void LidarPerceptionNode::filtering(const sensor_msgs::msg::PointCloud2::SharedP
     std::cout << "Normal Estimation: " << t12.count() << "s." << std::endl;
     std::cout << "Downsample: " << t23.count() << "s." << std::endl;
     std::cout << "Transform: " << t34.count() << "s." << std::endl;
+
+    
+    
+    // preproc_->set_world_transform(latest_pos_, latest_q_);
+    // auto t0 = std::chrono::high_resolution_clock::now();
+    // preproc_->set_input_cloud(cloud_buff_);
+    // auto t1 = std::chrono::high_resolution_clock::now();
+    // preproc_->normal_estimation();
+    // auto t2 = std::chrono::high_resolution_clock::now();
+    // preproc_->downsample();
+    // auto t3 = std::chrono::high_resolution_clock::now();
+    // preproc_->transform_output_to_world();
+    // auto t4 = std::chrono::high_resolution_clock::now();
+    // preproc_->get_points(latest_cloud_);
+    // preproc_->get_points_with_normals(latest_pts_w_nrms_);
+    
+    // std::chrono::duration<double> t01 = t1 - t0;
+    // std::chrono::duration<double> t12 = t2 - t1;
+    // std::chrono::duration<double> t23 = t3 - t2;
+    // std::chrono::duration<double> t34 = t4 - t3;
+    // std::cout << "Set PointCloud: " << t01.count() << "s." << std::endl;
+    // std::cout << "Normal Estimation: " << t12.count() << "s." << std::endl;
+    // std::cout << "Downsample: " << t23.count() << "s." << std::endl;
+    // std::cout << "Transform: " << t34.count() << "s." << std::endl;
 
     // Statistical outlier removal
     pcl::StatisticalOutlierRemoval<pcl::PointXYZ> sor;
