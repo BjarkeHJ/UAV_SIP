@@ -110,7 +110,10 @@ void LidarPerceptionNode::filtering(const sensor_msgs::msg::PointCloud2::SharedP
 
     // Custom downsampling 
     CloudPreprocess pp(pp_params_);
-    pp.downsample(*cloud_buff_, *latest_cloud_);
+    pp.set_input_cloud(cloud_buff_);
+    pp.normal_estimation();
+    pp.downsample();
+    pp.get_points_with_normals(latest_pts_w_nrms_);
     
     // Transform Pointcloud  
     Eigen::Matrix4f T = Eigen::Matrix4f::Identity();
