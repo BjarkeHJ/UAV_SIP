@@ -17,7 +17,7 @@ public:
         int ds_factor = 2;
         double min_range = 0.1;
         double max_range = 10.0;
-        bool keep_closest = true; // true: keept closes point per block - false: average point per block
+        bool keep_closest = true; // true: keep closest point per block - false: average point per block
 
         int normal_radius_px = 3;
         float depth_sigma_m = 0.05f; // depth aware similarity for edge aware weights
@@ -91,7 +91,7 @@ public:
 
     void transform_output_to_world() {
         if (!have_tf_) {
-            std::cout << "ERROR" << std::endl;
+            std::cerr << "[PREPROCESS] Error: world transform not set (call set_world_transform)" << std::endl;
             return;
         }
 
@@ -118,10 +118,16 @@ public:
             if (!std::isfinite(n.normal_x) || !std::isfinite(n.normal_y) || !std::isfinite(n.normal_z)) continue;
             Eigen::Vector3f ns(n.normal_x, n.normal_y, n.normal_z);
             Eigen::Vector3f nw = R_ws_ * ns;
-            float norm_inv = 1.0f / nw.norm();
-            n.normal_x = nw.x() * norm_inv;
-            n.normal_y = nw.y() * norm_inv;
-            n.normal_z = nw.z() * norm_inv;
+            const float nw_norm = nw.norm();
+            if (nw_norm > 1e-6f) {
+                const float norm_inv = 1.0f / nw_norm;
+                n.normal_x = nw.x() * norm_inv;
+                n.normal_y = nw.y() * norm_inv;
+                n.normal_z = nw.z() * norm_inv;
+            }
+            else {
+                n.normal_x = n.normal_y = n.normal_z = std::numeric_limits<float>::quiet_NaN();
+            }
 
             pcl::PointNormal& pn = cloud_w_normals_out_->points[i];
             pn.x = p.x;
@@ -280,9 +286,7 @@ private:
     void reduce_grid() {
         cloud_out_->clear();
         cloud_out_->reserve(static_cast<size_t>(Wd_ * Hd_));
-        // normals_out_->clear();
-        // normals_out_->reserve(static_cast<size_t>(Wd_ * Hd_));
-
+ 
         for (auto& c : grid_ds_) {
             c.stamp = 0;
             c.r2 = std::numeric_limits<float>::quiet_NaN();
@@ -316,7 +320,6 @@ private:
                 cd.r2 = best_r2;
                 cd.stamp = frame_id_;
                 cloud_out_->push_back(best_p);
-                // normals_out_->push_back(normals_grid_[idx(best_u, best_v)]);
             }
         }
 
@@ -444,6 +447,7 @@ private:
     }
 
     bool fetch_point(int u, int v, Eigen::Vector3f& P, float& r) const {
+        if (u < 0 || u >= Wd_ || v < 0 || v >= Hd_) return false;
         const size_t i = idx_ds(u,v);
         const Cell& c = grid_ds_[i];
         if (c.stamp != frame_id_) return false;
@@ -529,6 +533,7 @@ private:
                 (*normals_out_)[out_i++] = n;
             }
         }
+
         normals_out_->width = static_cast<uint32_t>(normals_out_->size());
         normals_out_->height = 1;
         normals_out_->is_dense = false;
