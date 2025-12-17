@@ -411,57 +411,6 @@ private:
                 }
             }
         }
-        
-        
-        // if (params_.range_smooth_iters <= 0) return;
-
-        // const int R = std::max(1, params_.normal_radius_px);
-        // const float inv2_sp = 1.0f / (2.0f * params_.spatial_sigma_px * params_.spatial_sigma_px);
-        // const float inv2_dp = 1.0f / (2.0f * params_.depth_sigma_m * params_.depth_sigma_m);
-
-        // std::vector<float> tmp = range_filt_;
-
-        // for (int it=0; it<params_.range_smooth_iters; ++it) {
-        //     for (int v=0; v<H_; ++v) {
-        //         for (int u=0; u<W_; ++u) {
-        //             const float rc = tmp[idx(u,v)];
-        //             if (!std::isfinite(rc)) {
-        //                 range_filt_[idx(u,v)] = rc; // set infinite val
-        //                 continue;
-        //             }
-
-        //             float wsum = 0.0f;
-        //             float vsum = 0.0f;
-                    
-        //             const int u0 = std::max(0, u-R);
-        //             const int u1 = std::min(W_-1, u+R);
-        //             const int v0 = std::max(0, v-R);
-        //             const int v1 = std::min(H_-1, v+R);
-
-        //             for (int vv=v0; vv<=v1; ++vv) {
-        //                 for (int uu=u0; uu<=u1; ++uu) {
-        //                     const float r = tmp[idx(uu,vv)];
-        //                     if (!std::isfinite(r)) continue;
-
-        //                     const float du = float(uu - u);
-        //                     const float dv = float(vv - v);
-        //                     const float ds2 = du*du + dv*dv;
-
-        //                     const float dr = r - rc;
-
-        //                     // gate based on depth jump
-        //                     if (std::fabs(dr) > params_.max_depth_jump_m) continue;
-
-        //                     const float w = std::exp(-ds2 * inv2_sp) * std::exp(-(dr*dr) * inv2_dp);
-        //                     wsum += w;
-        //                     vsum += w * r;
-        //                 }
-        //             }
-        //             range_filt_[idx(u,v)] = (wsum > 1e-6f) ? (vsum / wsum) : rc;
-        //         }
-        //     }
-        //     tmp = range_filt_;
-        // }
     }
 
     bool fetch_point(int u, int v, Eigen::Vector3f& P, float& r) const {
