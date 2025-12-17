@@ -10,7 +10,7 @@ LidarPerceptionNode::LidarPerceptionNode() : Node("LidarPerceptionNode") {
     pp_params_.height = this->declare_parameter<int>("tof_px_H", 180);
     pp_params_.hfov_deg = this->declare_parameter<double>("tof_fov_h", 106.0f);
     pp_params_.vfov_deg = this->declare_parameter<double>("tof_fov_v", 86.0f);
-    pp_params_.ds_factor = this->declare_parameter<double>("cloud_ds_factor", 3.0f);
+    pp_params_.ds_factor = this->declare_parameter<double>("cloud_ds_factor", 2.0f);
     pp_params_.min_range = this->declare_parameter<double>("tof_min_range", 0.1f);
     pp_params_.max_range = this->declare_parameter<double>("tof_max_range", 10.0f);
     pp_params_.keep_closest = this->declare_parameter<bool>("ds_keep_closest", true);
@@ -35,9 +35,10 @@ LidarPerceptionNode::LidarPerceptionNode() : Node("LidarPerceptionNode") {
 
     tree_ = std::make_shared<pcl::search::KdTree<pcl::PointXYZ>>();
     
+    preproc_ = std::make_unique<CloudPreprocess>(pp_params_);
+
     SurfelParams smp_;
     smapper_ = std::make_shared<SurfelMapping>(smp_);
-
 
     SurfelVizConfig sfv_cfg;
     sfv_cfg.frame_id = global_frame_;
@@ -60,8 +61,7 @@ void LidarPerceptionNode::pointcloud_callback(const sensor_msgs::msg::PointCloud
     // Then have a worker thread do the heavy lifting so this executor is not stalled...
     // have separate timer for planning (if planning is heavy -> multithread executor)
 
-    auto t1 = std::chrono::high_resolution_clock::now();
-
+    
     // Capture latest TF
     try {
         latest_tf_ = tf_buffer_->lookupTransform(global_frame_, lidar_frame_, msg->header.stamp);
@@ -76,8 +76,13 @@ void LidarPerceptionNode::pointcloud_callback(const sensor_msgs::msg::PointCloud
     catch (const tf2::TransformException &ex) {
         RCLCPP_ERROR(this->get_logger(), "Transform Lookup Failed: %s", ex.what());
     }
-
+    
+    auto t1 = std::chrono::high_resolution_clock::now();
     filtering(msg);
+    auto t2 = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> te = t2 - t1;
+    // std::cout << "Filtering + NE duration: " <<  te.count() << "s." << std::endl;
+    std::cout << latest_cloud_->points.size() << std::endl;
 
     sensor_msgs::msg::PointCloud2 msg_clean;
     pcl::toROSMsg(*latest_cloud_, msg_clean);
@@ -86,11 +91,6 @@ void LidarPerceptionNode::pointcloud_callback(const sensor_msgs::msg::PointCloud
     cloud_pub_->publish(msg_clean);
 
     // normal_estimation();
-    
-    auto t2 = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double> te = t2 - t1;
-    std::cout << "Filtering + NE duration: " <<  te.count() << "s." << std::endl;
-    std::cout << latest_cloud_->points.size() << std::endl;
 
     smapper_->set_local_frame(latest_pts_w_nrms_);
     smapper_->run();
@@ -110,19 +110,30 @@ void LidarPerceptionNode::filtering(const sensor_msgs::msg::PointCloud2::SharedP
 
     pcl::fromROSMsg(*msg, *cloud_buff_);
 
-    // Custom preprocessing 
-    CloudPreprocess pp(pp_params_);
-    pp.set_world_transform(latest_pos_, latest_q_);
-    pp.set_input_cloud(cloud_buff_);
-    pp.normal_estimation();
-    pp.downsample();
-    pp.transform_output_to_world();
-    pp.get_points(latest_cloud_);
-    pp.get_points_with_normals(latest_pts_w_nrms_);
+    // Custom preprocessing
+    preproc_->set_world_transform(latest_pos_, latest_q_);
+    auto t0 = std::chrono::high_resolution_clock::now();
+    preproc_->set_input_cloud(cloud_buff_);
+    auto t1 = std::chrono::high_resolution_clock::now();
+    preproc_->normal_estimation();
+    auto t2 = std::chrono::high_resolution_clock::now();
+    preproc_->downsample();
+    auto t3 = std::chrono::high_resolution_clock::now();
+    preproc_->transform_output_to_world();
+    auto t4 = std::chrono::high_resolution_clock::now();
+    preproc_->get_points(latest_cloud_);
+    preproc_->get_points_with_normals(latest_pts_w_nrms_);
     
+    std::chrono::duration<double> t01 = t1 - t0;
+    std::chrono::duration<double> t12 = t2 - t1;
+    std::chrono::duration<double> t23 = t3 - t2;
+    std::chrono::duration<double> t34 = t4 - t3;
+    std::cout << "Set PointCloud: " << t01.count() << "s." << std::endl;
+    std::cout << "Normal Estimation: " << t12.count() << "s." << std::endl;
+    std::cout << "Downsample: " << t23.count() << "s." << std::endl;
+    std::cout << "Transform: " << t34.count() << "s." << std::endl;
 
-    std::cout << "latest_cloud_ size: " << latest_cloud_->size() << std::endl;
-    std::cout << "latest_pts_w_nrms_ size: " << latest_pts_w_nrms_->size() << std::endl;
+
 
     // // Transform Pointcloud  
     // Eigen::Matrix4f T = Eigen::Matrix4f::Identity();

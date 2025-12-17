@@ -68,7 +68,7 @@ public:
 
     void normal_estimation() {
         build_range_image();
-        smooth_range_image();
+        // smooth_range_image();
         estimate_normals();
     }
 
@@ -84,7 +84,6 @@ public:
 
     void get_points_with_normals(pcl::PointCloud<pcl::PointNormal>::Ptr& cloud_pn) {
         // Reflect if downsample has been called prior to getting
-        // pcl::concatenateFields(*cloud_out_, *normals_out_, *cloud_w_normals_out_);
         cloud_pn = cloud_w_normals_out_;
     }
 

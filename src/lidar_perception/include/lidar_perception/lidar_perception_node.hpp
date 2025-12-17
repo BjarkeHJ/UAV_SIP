@@ -65,6 +65,7 @@ private:
 
     pcl::search::KdTree<pcl::PointXYZ>::Ptr tree_;
 
+    std::unique_ptr<CloudPreprocess> preproc_;
     std::shared_ptr<SurfelMapping> smapper_;
 
     std::unique_ptr<SurfelDebugViz> surfel_viz_;
