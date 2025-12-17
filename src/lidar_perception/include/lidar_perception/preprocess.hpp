@@ -51,7 +51,7 @@ public:
             return;
         }
         cloud_ = in;
-        clear_grid();
+        invalidate_all();
         project_to_grid(cloud_);
     }
 
@@ -146,7 +146,7 @@ private:
         pcl::PointXYZ p;
         float r2 = std::numeric_limits<float>::infinity();
         int count = 0;
-        bool valid = false;
+        uint32_t stamp = 0; // 0 is never written
     };
 
     /* Data */
@@ -165,6 +165,8 @@ private:
     int Wd_{0}, Hd_{0};
     float yaw_min_, yaw_max_, pitch_min_, pitch_max_;
     float yaw_span_, pitch_span_;
+
+    uint32_t frame_id_{1}; // unique id of the scan
 
     Eigen::Matrix3f R_ws_ = Eigen::Matrix3f::Identity();
     Eigen::Vector3f t_ws_ = Eigen::Vector3f::Zero();
@@ -194,14 +196,15 @@ private:
         normals_grid_.resize(static_cast<size_t>(W_ * H_));
     }
 
-    inline void clear_grid() {
-        for (auto& c : grid_) {
-            c.valid = false;
-            c.count = 0;
-            c.r2 = std::numeric_limits<float>::infinity();
+    inline void invalidate_all() {
+        if (++frame_id_ == 0) {
+            frame_id_ = 1;
+            for (auto& c : grid_) c.stamp = 0;
         }
     }
 
+    inline bool is_valid(const Cell& c) const { return c.stamp == frame_id_; }
+    
     bool inline finite(const pcl::PointXYZ& p) const {
         return std::isfinite(p.x) && std::isfinite(p.y) && std::isfinite(p.z);
     }
@@ -235,20 +238,18 @@ private:
             
             if (u < 0 || u >= W_ || v < 0 || v >= H_) continue;
 
-            // Cell& c = grid_[static_cast<size_t>(v * W_ + u)];
             Cell& c = grid_[idx(u,v)];
-
             if (params_.keep_closest) {
-                if (!c.valid || r2 < c.r2) {
+                if (!is_valid(c) || r2 < c.r2) {
                     c.p = p;
                     c.r2 = r2;
-                    c.valid = true;
+                    c.stamp = frame_id_;
                 }
             }
             else {
-                if (!c.valid) {
+                if (!is_valid(c)) {
                     c.p = p;
-                    c.valid = true;
+                    c.stamp = frame_id_;
                     c.count = 1;
                 }
                 else {
@@ -292,7 +293,7 @@ private:
                         if (u >= W_ || v >= H_) continue;
 
                         const Cell& c = grid_[idx(u,v)];
-                        if (!c.valid) continue;
+                        if (!is_valid(c)) continue;
                         if (!found || c.r2 < best_r2) {
                             best_r2 = c.r2;
                             best_u = u;
@@ -314,7 +315,7 @@ private:
         for (int v=0; v<H_; ++v) {
             for (int u=0; u<W_; ++u) {
                 const Cell& c = grid_[idx(u,v)];
-                if (!c.valid) {
+                if (!is_valid(c)) {
                     range_[idx(u,v)] = std::numeric_limits<float>::quiet_NaN();
                     continue;
                 }
@@ -378,7 +379,7 @@ private:
 
     bool fetch_point(int u, int v, Eigen::Vector3f& P, float& r) const {
         const Cell& c = grid_[idx(u,v)];
-        if (!c.valid) return false;
+        if (!is_valid(c)) return false;
         r = range_filt_[idx(u,v)];
         if (!std::isfinite(r)) return false;
         P = Eigen::Vector3f(c.p.x, c.p.y, c.p.z);
@@ -458,6 +459,8 @@ private:
             }
         }
     }
+
+
 };
 
 #endif
