@@ -552,6 +552,7 @@ private:
             n.normal_x = nn.x();
             n.normal_y = nn.y();
             n.normal_z = nn.z();
+            normals_out_->points.push_back(n);
         }
 
     //     for (int v=0; v<H_; ++v) {
