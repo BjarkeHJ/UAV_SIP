@@ -255,47 +255,24 @@ private:
 
     void downsample_grid() {
         // Build output cloud from downsampled grid
-        pcl::PointCloud<pcl::PointXYZ>::Ptr temp_cloud(new pcl::PointCloud<pcl::PointXYZ>);
-        temp_cloud->reserve(W_ * H_);
-        
-        // cloud_out_->clear();
-        // cloud_out_->reserve(W_ * H_);
+        cloud_out_->clear();
+        cloud_out_->reserve(W_ * H_);
 
         for (const auto& cell : grid_ds_) {
             if (cell.valid) {
-                temp_cloud->points.push_back(cell.point);
-                // cloud_out_->points.push_back(cell.point);
+                cloud_out_->points.push_back(cell.point);
             }
         }
 
-        temp_cloud->width = temp_cloud->size();
-        temp_cloud->height = 1;
-        temp_cloud->is_dense = false;
-
-        pcl::PointCloud<pcl::PointXYZ> filtered;
-
-        pcl::StatisticalOutlierRemoval<pcl::PointXYZ> sor_;
-        sor_.setInputCloud(temp_cloud);
-        std::cout << "test" << std::endl;
-        sor_.setMeanK(10);
-        std::cout << "test" << std::endl;
-        sor_.setStddevMulThresh(1.0);
-        std::cout << "test" << std::endl;
-        sor_.filter(filtered);
-        std::cout << "test" << std::endl;
-        
-        *cloud_out_ = filtered; 
-
-        std::cout << cloud_out_->size() << std::endl;
-        
-        // cloud_out_->width = cloud_out_->size();
-        // cloud_out_->height = 1;
-        // cloud_out_->is_dense = false;
+        cloud_out_->width = cloud_out_->size();
+        cloud_out_->height = 1;
+        cloud_out_->is_dense = false;
     }
+
 
     void build_range_image() {
         /* Create 2D Depth Map from point cloud distances from sensor */
-        for (int i = 0; i < W_; ++i) {
+        for (int i = 0; i < W_ * H_; ++i) {
             if (grid_ds_[i].valid) {
                 range_img_[i] = std::sqrt(grid_ds_[i].range_sq);
             }
