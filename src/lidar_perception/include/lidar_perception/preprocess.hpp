@@ -3,6 +3,7 @@
 
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
+#include <pcl/filters/statistical_outlier_removal.h>
 
 /* 
 * CloudPreprocess: Efficient pointcloud surface normal estimation via spherical projection and finite depth difference
@@ -254,14 +255,28 @@ private:
 
     void downsample_grid() {
         // Build output cloud from downsampled grid
-        cloud_out_->clear();
-        cloud_out_->reserve(W_ * H_);
+        pcl::PointCloud<pcl::PointXYZ>::Ptr temp_cloud = std::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
+        temp_cloud->reserve(W_ * H_);
         
         for (const auto& cell : grid_ds_) {
             if (cell.valid) {
-                cloud_out_->points.push_back(cell.point);
+                temp_cloud->points.push_back(cell.point);
+                // cloud_out_->points.push_back(cell.point);
             }
         }
+
+        temp_cloud->width = temp_cloud->size();
+        temp_cloud->height = 1;
+        temp_cloud->is_dense = false;
+
+        cloud_out_->clear();
+        cloud_out_->reserve(temp_cloud->size());
+
+        pcl::StatisticalOutlierRemoval<pcl::PointXYZ> sor_;
+        sor_.setInputCloud(temp_cloud);
+        sor_.setMeanK(10);
+        sor_.setStddevMulThresh(0.5);
+        sor_.filter(*cloud_out_);
 
         cloud_out_->width = cloud_out_->size();
         cloud_out_->height = 1;
