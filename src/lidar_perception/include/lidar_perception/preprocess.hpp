@@ -76,8 +76,7 @@ public:
 
     // Main API
     void downsample() {
-        project_to_grid(cloud_in_);
-        downsample_grid();
+        project_to_grid_and_downsample(cloud_in_);
     }
 
     void normal_estimation() {
@@ -167,7 +166,7 @@ private:
    
     inline size_t idx(int u, int v) const { return static_cast<size_t>(v * W_ + u); }
 
-    void project_to_grid(const pcl::PointCloud<pcl::PointXYZ>::Ptr& in) {
+    void project_to_grid_and_downsample(const pcl::PointCloud<pcl::PointXYZ>::Ptr& in) {
 
         // Clear downsampled grid
         for (auto& cell : grid_ds_) {
@@ -251,9 +250,7 @@ private:
                 }
             }
         }
-    }
 
-    void downsample_grid() {
         // Build output cloud from downsampled grid
         cloud_out_->clear();
         cloud_out_->reserve(W_ * H_);
@@ -268,7 +265,6 @@ private:
         cloud_out_->height = 1;
         cloud_out_->is_dense = false;
     }
-
 
     void build_range_image() {
         /* Create 2D Depth Map from point cloud distances from sensor */

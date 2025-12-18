@@ -20,7 +20,7 @@
 #include <pcl/filters/filter.h>
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/filters/passthrough.h>
-// #include <pcl/filters/statistical_outlier_removal.h>
+#include <pcl/filters/statistical_outlier_removal.h>
 
 #include "lidar_perception/preprocess.hpp"
 #include "lidar_perception/surfel_mapping.hpp"
