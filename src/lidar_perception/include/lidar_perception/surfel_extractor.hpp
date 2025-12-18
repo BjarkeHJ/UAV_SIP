@@ -4,7 +4,7 @@
 #include "surfel2d.hpp"
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
-#include <pcl/kdtree/kdtree.h>
+#include <pcl/search/kdtree.h>
 
 namespace surface_inspection_planner {
 
