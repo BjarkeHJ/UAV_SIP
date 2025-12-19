@@ -5,12 +5,13 @@
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
 #include <pcl/search/kdtree.h>
+#include <Eigen/Core>
 
 namespace surface_inspection_planner {
 
 struct SurfelExtractionConfig {
     float normal_angle_threshold_deg = 15.0f;
-    float spatial_distance_threshold = 0.05f;
+    float spatial_distance_threshold = 0.10f;
     int min_points_per_surfel = 10;
     int max_points_per_surfel = 100;
 

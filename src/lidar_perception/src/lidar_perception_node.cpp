@@ -33,19 +33,9 @@ LidarPerceptionNode::LidarPerceptionNode() : Node("LidarPerceptionNode") {
     cloud_buff_ = std::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
 
     tree_ = std::make_shared<pcl::search::KdTree<pcl::PointXYZ>>();
-    
     preproc_ = std::make_unique<CloudPreprocess>(pp_params_);
 
-    SurfelParams smp_;
-    smapper_ = std::make_shared<SurfelMapping>(smp_);
-
-    SurfelVizConfig sfv_cfg;
-    sfv_cfg.frame_id = global_frame_;
-    sfv_cfg.topic = "/surfels_debug";
-    sfv_cfg.k_sigma = 2.0f;
-    sfv_cfg.lifetime_sec = 0.3;
-    sfv_cfg.stride = 1;
-    surfel_viz_ = std::make_unique<SurfelDebugViz>(*this, sfv_cfg);
+    surfel_extract_ = std::make_unique<SurfelExtractor>();
 
     RCLCPP_INFO(this->get_logger(), "LidarPerceptionNode Started...");
 }
@@ -59,6 +49,7 @@ void LidarPerceptionNode::pointcloud_callback(const sensor_msgs::msg::PointCloud
     // TODO: Have this callback only grab the latest pointcloud and store it
     // Then have a worker thread do the heavy lifting so this executor is not stalled...
     // have separate timer for planning (if planning is heavy -> multithread executor)
+    // TODO: Batch accumulator over N scans using transform information? (Flag to run/wait preprocess on batch)
 
     
     // Capture latest TF
@@ -76,32 +67,45 @@ void LidarPerceptionNode::pointcloud_callback(const sensor_msgs::msg::PointCloud
         RCLCPP_ERROR(this->get_logger(), "Transform Lookup Failed: %s", ex.what());
     }
     
-    auto t1 = std::chrono::high_resolution_clock::now();
     filtering(msg);
-    auto t2 = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double> te = t2 - t1;
-    // std::cout << "Filtering + NE duration: " <<  te.count() << "s." << std::endl;
     std::cout << latest_cloud_->points.size() << std::endl;
+    
+    auto t1 = std::chrono::high_resolution_clock::now();
+    std::vector<Surfel2D> extracted_surfels = surfel_extract_->extract_surfels(latest_cloud_, latest_normals_);
+    auto t2 = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> ts = t2-t1;
+
+    std::cout << "Number of Surfels: " << extracted_surfels.size() << std::endl;
+    std::cout << "Surfel Extactor Time: " << ts.count() << std::endl;
+
+    pcl::PointCloud<pcl::PointXYZ> surfel_centers;
+    pcl::PointCloud<pcl::PointNormal>::Ptr surfel_centers_w_normals(new pcl::PointCloud<pcl::PointNormal>);
+    surfel_centers.points.reserve(extracted_surfels.size());
+    surfel_centers_w_normals->points.reserve(extracted_surfels.size());
+    for (size_t i = 0; i < extracted_surfels.size(); ++i) {
+        Eigen::Vector3f& p = extracted_surfels[i].center;
+        Eigen::Vector3f& n = extracted_surfels[i].normal;
+        pcl::PointXYZ pt(p.x(), p.y(), p.z());
+        pcl::PointNormal pn;
+        pn.x = pt.x;
+        pn.y = pt.y;
+        pn.z = pt.z;
+        pn.normal_x = n.x();
+        pn.normal_y = n.y();
+        pn.normal_z = n.z();
+        surfel_centers.points.push_back(pt);
+        surfel_centers_w_normals->push_back(pn);
+    }
 
     sensor_msgs::msg::PointCloud2 msg_clean;
-    pcl::toROSMsg(*latest_cloud_, msg_clean);
+    // pcl::toROSMsg(*latest_cloud_, msg_clean);
+    pcl::toROSMsg(surfel_centers, msg_clean);
     msg_clean.header.frame_id = global_frame_;
     msg_clean.header.stamp = msg->header.stamp;
     cloud_pub_->publish(msg_clean);
-
-    // normal_estimation();
-
-    smapper_->set_local_frame(latest_pts_w_nrms_);
-    smapper_->run();
-    std::vector<Surfel2D>& s2ds = smapper_->get_local_surfels();
-    auto t3 = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double> tee = t3 - t2;
-    std::cout << "Surfel Extract Duration: " <<  tee.count() << "s." << std::endl;
-
-    // TODO: Batch accumulator over N scans using transform information? (Flag to run/wait preprocess on batch)
-    surfel_viz_->publish(s2ds);
-    publishNormals(latest_pts_w_nrms_, global_frame_, 0.1);
-
+ 
+    // publishNormals(latest_pts_w_nrms_, global_frame_, 0.1);
+    publishNormals(surfel_centers_w_normals, global_frame_, 0.1);
 }
 
 void LidarPerceptionNode::filtering(const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
@@ -120,6 +124,7 @@ void LidarPerceptionNode::filtering(const sensor_msgs::msg::PointCloud2::SharedP
     preproc_->transform_output_to_world();
     auto t4 = std::chrono::high_resolution_clock::now();
     preproc_->get_points(latest_cloud_);
+    preproc_->get_normals(latest_normals_);
     preproc_->get_points_with_normals(latest_pts_w_nrms_);
     
     std::chrono::duration<double> t12 = t2 - t1;

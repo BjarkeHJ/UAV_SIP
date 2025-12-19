@@ -39,8 +39,8 @@ struct Surfel2D {
           confidence(0.0f),
           radius(0.0f),
           num_points(0),
-          timestamp(0.0),
-          id(-1) {}
+          id(-1),
+          timestamp(0.0) {};
 
     bool isValid() const {
         return num_points > 0 &&

@@ -41,7 +41,8 @@ target_include_directories(
 add_executable(
   ${EXEC_PERCEPTION}
   src/lidar_perception_node.cpp
-  src/surfel_mapping.cpp
+  # src/surfel_mapping.cpp
+  src/surfel_extractor.cpp
 )
 add_executable(
   ${EXEC_PLANNER}
