@@ -11,7 +11,7 @@
 
 #include "lidar_perception/surfel2d.hpp"
 
-using namespace surface_inspection_planner;
+namespace surface_inspection_planner {
 
 class SurfelVisualizer {
 public:
@@ -53,5 +53,6 @@ private:
     int marker_id_offset_ = 0;
 };
 
+};
 
 #endif

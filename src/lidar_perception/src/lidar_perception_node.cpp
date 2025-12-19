@@ -34,8 +34,19 @@ LidarPerceptionNode::LidarPerceptionNode() : Node("LidarPerceptionNode") {
 
     tree_ = std::make_shared<pcl::search::KdTree<pcl::PointXYZ>>();
     preproc_ = std::make_unique<CloudPreprocess>(pp_params_);
-
+    
     surfel_extract_ = std::make_unique<SurfelExtractor>();
+
+    /* VISUALIZATION */
+    surfel_viz_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("/surfels/combined", 10);
+    surfel_ellipse_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("/surfels/ellipses", 10);
+    surfel_normals_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("/surfels/normals", 10);
+    surfel_wireframe_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("/surfels/wireframes", 10);
+    surfel_viz_ = std::make_unique<SurfelVisualizer>(this);
+    surfel_viz_->set_normal_scale(0.15);
+    surfel_viz_->set_ellipse_resolution(32);
+    surfel_viz_->set_sigma_multiplier(1.0);
+    surfel_viz_->set_alpha(0.7);
 
     RCLCPP_INFO(this->get_logger(), "LidarPerceptionNode Started...");
 }
@@ -78,34 +89,18 @@ void LidarPerceptionNode::pointcloud_callback(const sensor_msgs::msg::PointCloud
     std::cout << "Number of Surfels: " << extracted_surfels.size() << std::endl;
     std::cout << "Surfel Extactor Time: " << ts.count() << std::endl;
 
-    pcl::PointCloud<pcl::PointXYZ> surfel_centers;
-    pcl::PointCloud<pcl::PointNormal>::Ptr surfel_centers_w_normals(new pcl::PointCloud<pcl::PointNormal>);
-    surfel_centers.points.reserve(extracted_surfels.size());
-    surfel_centers_w_normals->points.reserve(extracted_surfels.size());
-    for (size_t i = 0; i < extracted_surfels.size(); ++i) {
-        Eigen::Vector3f& p = extracted_surfels[i].center;
-        Eigen::Vector3f& n = extracted_surfels[i].normal;
-        pcl::PointXYZ pt(p.x(), p.y(), p.z());
-        pcl::PointNormal pn;
-        pn.x = pt.x;
-        pn.y = pt.y;
-        pn.z = pt.z;
-        pn.normal_x = n.x();
-        pn.normal_y = n.y();
-        pn.normal_z = n.z();
-        surfel_centers.points.push_back(pt);
-        surfel_centers_w_normals->push_back(pn);
+    if (!extracted_surfels.empty()) {
+        auto combined = surfel_viz_->create_visualization(extracted_surfels, global_frame_, SurfelVisualizer::VisualizationMode::COMBINED, msg->header.stamp);
+        surfel_viz_pub_->publish(combined);
     }
 
     sensor_msgs::msg::PointCloud2 msg_clean;
-    // pcl::toROSMsg(*latest_cloud_, msg_clean);
-    pcl::toROSMsg(surfel_centers, msg_clean);
+    pcl::toROSMsg(*latest_cloud_, msg_clean);
     msg_clean.header.frame_id = global_frame_;
     msg_clean.header.stamp = msg->header.stamp;
     cloud_pub_->publish(msg_clean);
  
-    // publishNormals(latest_pts_w_nrms_, global_frame_, 0.1);
-    publishNormals(surfel_centers_w_normals, global_frame_, 0.1);
+    publishNormals(latest_pts_w_nrms_, global_frame_, 0.1);
 }
 
 void LidarPerceptionNode::filtering(const sensor_msgs::msg::PointCloud2::SharedPtr msg) {

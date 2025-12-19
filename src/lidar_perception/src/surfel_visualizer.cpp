@@ -1,10 +1,11 @@
 #include "lidar_perception/surfel_visualizer.hpp"
 #include <cmath>
 
+namespace surface_inspection_planner {
+
 SurfelVisualizer::SurfelVisualizer(rclcpp::Node* node) : node_(node) {
 
 }
-
 
 visualization_msgs::msg::MarkerArray SurfelVisualizer::create_visualization(
     const std::vector<Surfel2D>& surfels,
@@ -13,7 +14,7 @@ visualization_msgs::msg::MarkerArray SurfelVisualizer::create_visualization(
     const rclcpp::Time& timestamp) {
     
     visualization_msgs::msg::MarkerArray marker_array;
-    
+
     if (surfels.empty()) {
         return marker_array;
     }
@@ -72,6 +73,7 @@ visualization_msgs::msg::Marker SurfelVisualizer::create_ellipse_disk_mesh(
     int id) {
     
     visualization_msgs::msg::Marker marker;
+    marker.lifetime = rclcpp::Duration::from_seconds(0.2);
     marker.header.frame_id = frame_id;
     marker.header.stamp = timestamp;
     marker.ns = "surfel_disks";
@@ -115,6 +117,10 @@ visualization_msgs::msg::Marker SurfelVisualizer::create_ellipse_disk_mesh(
         marker.points.push_back(p0);
         marker.points.push_back(p1);
         marker.points.push_back(p2);
+
+        marker.points.push_back(p0);
+        marker.points.push_back(p2);
+        marker.points.push_back(p1);
     }
     
     // Set scale (not used for TRIANGLE_LIST but required)
@@ -139,6 +145,7 @@ void SurfelVisualizer::create_normal_arrow_markers(
         const auto& surfel = surfels[i];
         
         visualization_msgs::msg::Marker arrow;
+        arrow.lifetime = rclcpp::Duration::from_seconds(0.2);
         arrow.header.frame_id = frame_id;
         arrow.header.stamp = timestamp;
         arrow.ns = "surfel_normals";
@@ -182,6 +189,7 @@ void SurfelVisualizer::create_confidence_sphere_markers(
         const auto& surfel = surfels[i];
         
         visualization_msgs::msg::Marker sphere;
+        sphere.lifetime = rclcpp::Duration::from_seconds(0.2);
         sphere.header.frame_id = frame_id;
         sphere.header.stamp = timestamp;
         sphere.ns = "surfel_centers";
@@ -218,6 +226,7 @@ void SurfelVisualizer::create_wireframe_ellipse_markers(
         const auto& surfel = surfels[i];
         
         visualization_msgs::msg::Marker line_strip;
+        line_strip.lifetime = rclcpp::Duration::from_seconds(0.2);
         line_strip.header.frame_id = frame_id;
         line_strip.header.stamp = timestamp;
         line_strip.ns = "surfel_wireframes";
@@ -335,3 +344,5 @@ std_msgs::msg::ColorRGBA SurfelVisualizer::get_confidence_color(float confidence
     color.a = 1.0f;
     return color;
 }
+
+};

@@ -17,6 +17,7 @@ std::vector<Surfel2D> SurfelExtractor::extract_surfels(const pcl::PointCloud<pcl
 
     build_kdtree(cloud);
 
+    // Region growing wrt. surface normal similarity
     std::vector<std::vector<int>> patches = segment_into_patches(cloud, normals);
 
     std::vector<Surfel2D> surfels;
@@ -236,6 +237,11 @@ Surfel2D SurfelExtractor::fit_surfel_to_patch(const pcl::PointCloud<pcl::PointXY
 
     surfel.radius = 3.0f * std::sqrt(surfel.eigen_values.maxCoeff()); // 3 * sqrt(largest eval) - 3 sigma bound
 
+    // Compute rms error (point-to-plane)
+    float rms_error = compute_rms_error(cloud, indices, centroid, normal_sum);
+    float rms_val = std::exp(-rms_error / 0.1f);
+    // surfel.confidence = rms_val;
+
     // Planarity based on 3d covariance 
     Eigen::Matrix3f cov_3d = Eigen::Matrix3f::Zero();
     for (int idx : indices) {
@@ -249,14 +255,16 @@ Surfel2D SurfelExtractor::fit_surfel_to_patch(const pcl::PointCloud<pcl::PointXY
 
     Eigen::SelfAdjointEigenSolver<Eigen::Matrix3f> eigen_solver_3d(cov_3d);
     Eigen::Vector3f eigenvalues_3d = eigen_solver_3d.eigenvalues();
-    surfel.confidence = compute_planarity(eigenvalues_3d);
+    float planarity = compute_planarity(eigenvalues_3d);
+    // surfel.confidence = compute_planarity(eigenvalues_3d);
 
+    surfel.confidence = 0.5 * rms_val + 0.5 * planarity;
     return surfel;
 }
 
 bool SurfelExtractor::is_valid_surfel(const Surfel2D& surfel) const {
     if (surfel.num_points < config_.min_points_per_surfel) return false;
-    if (surfel.confidence < config_.min_planarity) return false;
+    if (surfel.confidence < config_.min_confidence) return false;
     if (surfel.getAspectRatio() > config_.max_aspect_ratio) return false;
     if (!surfel.center.allFinite() || !surfel.normal.allFinite()) return false;
     if (std::abs(surfel.normal.norm() - 1.0f) > 0.01f) return false;
@@ -281,6 +289,23 @@ float SurfelExtractor::compute_planarity(const Eigen::Vector3f& eigenvalues) con
     float planarity = (lambda1 - lambda0) / lambda2;
 
     return std::max(0.0f, std::min(1.0f, planarity));
+}
+
+float SurfelExtractor::compute_rms_error(const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud, const std::vector<int>& indices, const Eigen::Vector3f& center, const Eigen::Vector3f& normal) const {
+    if (indices.empty()) return std::numeric_limits<float>::max();
+
+    float sum_sq_dist = 0.0f;
+    for (int idx : indices) {
+        const auto& pt = cloud->points[idx];
+        Eigen::Vector3f p(pt.x, pt.y, pt.z);
+
+        // signed distance to plane
+        float distance = normal.dot(p - center);
+        sum_sq_dist += distance * distance;
+    }
+
+    float rms = std::sqrt(sum_sq_dist / indices.size());
+    return rms;
 }
 
 

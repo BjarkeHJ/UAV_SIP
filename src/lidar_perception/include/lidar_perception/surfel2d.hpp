@@ -1,5 +1,5 @@
 #ifndef SURFEL2D_HPP_
-#define SURFEL2d_HPP_
+#define SURFEL2D_HPP_
 
 #include <Eigen/Dense>
 

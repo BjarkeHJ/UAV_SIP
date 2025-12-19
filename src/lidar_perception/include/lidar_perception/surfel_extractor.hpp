@@ -15,8 +15,8 @@ struct SurfelExtractionConfig {
     int min_points_per_surfel = 10;
     int max_points_per_surfel = 100;
 
-    float min_planarity = 0.7f;
-    float max_aspect_ratio = 5.0f;
+    float min_confidence = 0.3f; // [0: 1]
+    float max_aspect_ratio = 10.0f;
 
     int knn_neighbors = 20;
     int min_region_size = 10;
@@ -37,10 +37,12 @@ public:
 private:
     std::vector<std::vector<int>> segment_into_patches(const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud, const pcl::PointCloud<pcl::Normal>::Ptr& normals);
     Surfel2D fit_surfel_to_patch(const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud, const pcl::PointCloud<pcl::Normal>::Ptr& normals, const std::vector<int>& indices);
+    std::vector<Surfel2D> refine_surfels(const std::vector<Surfel2D>& surfels);
 
     bool is_valid_surfel(const Surfel2D& surfel) const;
     bool normals_are_similar(const Eigen::Vector3f& n1, const Eigen::Vector3f& n2) const;
     float compute_planarity(const Eigen::Vector3f& eigenvalues) const;
+    float compute_rms_error(const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud, const std::vector<int>& indices, const Eigen::Vector3f& center, const Eigen::Vector3f& normal) const;
     void build_kdtree(const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud);
     
     SurfelExtractionConfig config_;
