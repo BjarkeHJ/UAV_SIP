@@ -10,7 +10,7 @@ LidarPerceptionNode::LidarPerceptionNode() : Node("LidarPerceptionNode") {
     pp_params_.height = this->declare_parameter<int>("tof_px_H", 180);
     pp_params_.hfov_deg = this->declare_parameter<double>("tof_fov_h", 106.0f);
     pp_params_.vfov_deg = this->declare_parameter<double>("tof_fov_v", 86.0f);
-    pp_params_.ds_factor = this->declare_parameter<double>("cloud_ds_factor", 2.0f);
+    pp_params_.ds_factor = this->declare_parameter<int>("cloud_ds_factor", 3);
     pp_params_.min_range = this->declare_parameter<double>("tof_min_range", 0.1f);
     pp_params_.max_range = this->declare_parameter<double>("tof_max_range", 10.0f);
 
@@ -45,7 +45,7 @@ LidarPerceptionNode::LidarPerceptionNode() : Node("LidarPerceptionNode") {
     surfel_viz_ = std::make_unique<SurfelVisualizer>(this);
     surfel_viz_->set_normal_scale(0.15);
     surfel_viz_->set_ellipse_resolution(32);
-    surfel_viz_->set_sigma_multiplier(1.0);
+    surfel_viz_->set_sigma_multiplier(2.0);
     surfel_viz_->set_alpha(0.7);
 
     RCLCPP_INFO(this->get_logger(), "LidarPerceptionNode Started...");
@@ -78,16 +78,18 @@ void LidarPerceptionNode::pointcloud_callback(const sensor_msgs::msg::PointCloud
         RCLCPP_ERROR(this->get_logger(), "Transform Lookup Failed: %s", ex.what());
     }
     
-    filtering(msg);
-    std::cout << latest_cloud_->points.size() << std::endl;
-    
     auto t1 = std::chrono::high_resolution_clock::now();
-    std::vector<Surfel2D> extracted_surfels = surfel_extract_->extract_surfels(latest_cloud_, latest_normals_);
+    preprocess(msg);
     auto t2 = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double> ts = t2-t1;
-
-    std::cout << "Number of Surfels: " << extracted_surfels.size() << std::endl;
-    std::cout << "Surfel Extactor Time: " << ts.count() << std::endl;
+    std::vector<Surfel2D> extracted_surfels = surfel_extract_->extract_surfels(latest_cloud_, latest_normals_);
+    auto t3 = std::chrono::high_resolution_clock::now();
+    
+    std::chrono::duration<double> tfilt = t2-t1;
+    std::cout << "Preprocessing Time: " << tfilt.count() << std::endl;
+    std::cout << "Downsampled PointCloud Size: " << latest_cloud_->points.size() << std::endl;
+    std::chrono::duration<double> tsurf = t3-t2;
+    std::cout << "Surfel Extaction Time: " << tsurf.count() << std::endl;
+    std::cout << "Number of Extracted Surfels: " << extracted_surfels.size() << std::endl;
 
     if (!extracted_surfels.empty()) {
         auto combined = surfel_viz_->create_visualization(extracted_surfels, global_frame_, SurfelVisualizer::VisualizationMode::COMBINED, msg->header.stamp);
@@ -103,63 +105,30 @@ void LidarPerceptionNode::pointcloud_callback(const sensor_msgs::msg::PointCloud
     publishNormals(latest_pts_w_nrms_, global_frame_, 0.1);
 }
 
-void LidarPerceptionNode::filtering(const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
+void LidarPerceptionNode::preprocess(const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
     if (!latest_cloud_ || msg->data.empty()) return;
-
     pcl::fromROSMsg(*msg, *cloud_buff_);
 
     // Custom preprocessing
     preproc_->set_world_transform(latest_pos_, latest_q_);
     preproc_->set_input_cloud(cloud_buff_);
-    auto t1 = std::chrono::high_resolution_clock::now();
+    // auto t1 = std::chrono::high_resolution_clock::now();
     preproc_->downsample();
-    auto t2 = std::chrono::high_resolution_clock::now();
+    // auto t2 = std::chrono::high_resolution_clock::now();
     preproc_->normal_estimation();
-    auto t3 = std::chrono::high_resolution_clock::now();
+    // auto t3 = std::chrono::high_resolution_clock::now();
     preproc_->transform_output_to_world();
-    auto t4 = std::chrono::high_resolution_clock::now();
+    // auto t4 = std::chrono::high_resolution_clock::now();
     preproc_->get_points(latest_cloud_);
     preproc_->get_normals(latest_normals_);
     preproc_->get_points_with_normals(latest_pts_w_nrms_);
     
-    std::chrono::duration<double> t12 = t2 - t1;
-    std::chrono::duration<double> t23 = t3 - t2;
-    std::chrono::duration<double> t34 = t4 - t3;
-    std::cout << "Normal Estimation: " << t12.count() << "s." << std::endl;
-    std::cout << "Downsample: " << t23.count() << "s." << std::endl;
-    std::cout << "Transform: " << t34.count() << "s." << std::endl;
-
-    
-    
-    // preproc_->set_world_transform(latest_pos_, latest_q_);
-    // auto t0 = std::chrono::high_resolution_clock::now();
-    // preproc_->set_input_cloud(cloud_buff_);
-    // auto t1 = std::chrono::high_resolution_clock::now();
-    // preproc_->normal_estimation();
-    // auto t2 = std::chrono::high_resolution_clock::now();
-    // preproc_->downsample();
-    // auto t3 = std::chrono::high_resolution_clock::now();
-    // preproc_->transform_output_to_world();
-    // auto t4 = std::chrono::high_resolution_clock::now();
-    // preproc_->get_points(latest_cloud_);
-    // preproc_->get_points_with_normals(latest_pts_w_nrms_);
-    
-    // std::chrono::duration<double> t01 = t1 - t0;
     // std::chrono::duration<double> t12 = t2 - t1;
     // std::chrono::duration<double> t23 = t3 - t2;
     // std::chrono::duration<double> t34 = t4 - t3;
-    // std::cout << "Set PointCloud: " << t01.count() << "s." << std::endl;
     // std::cout << "Normal Estimation: " << t12.count() << "s." << std::endl;
     // std::cout << "Downsample: " << t23.count() << "s." << std::endl;
     // std::cout << "Transform: " << t34.count() << "s." << std::endl;
-
-    // Statistical outlier removal
-    // pcl::StatisticalOutlierRemoval<pcl::PointXYZ> sor;
-    // sor.setInputCloud(latest_cloud_);
-    // sor.setMeanK(10);
-    // sor.setStddevMulThresh (0.5);
-    // sor.filter(*cloud_buff_);
-    // latest_cloud_ = cloud_buff_;
 }
 
 void LidarPerceptionNode::normal_estimation() {

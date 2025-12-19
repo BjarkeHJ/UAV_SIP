@@ -55,6 +55,24 @@ struct Surfel2D {
     }
 };
 
+struct GlobalSurfel2D : public Surfel2D {
+    int num_observations = 1;
+    int last_seen_frame = 0;
+
+    Eigen::Vector3f position_variance;
+    Eigen::Vector3f normal_variance;
+    Eigen::Matrix2f covariance_variance;
+
+    bool is_stable = false;
+    std::vector<int> source_ids;
+
+    GlobalSurfel2D() : Surfel2D() {
+        position_variance = Eigen::Vector3f::Ones() * 0.01f;
+        normal_variance = Eigen::Vector3f::Ones() * 0.1f;
+        covariance_variance = Eigen::Matrix2f::Identity() * 0.001f;
+    }
+};
+
 }; // end namespace
 
 

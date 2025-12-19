@@ -11,12 +11,12 @@ namespace surface_inspection_planner {
 
 struct SurfelExtractionConfig {
     float normal_angle_threshold_deg = 25.0f;
-    float spatial_distance_threshold = 0.20f;
+    float spatial_distance_threshold = 0.25f;
     int min_points_per_surfel = 10;
     int max_points_per_surfel = 100;
 
-    float min_confidence = 0.3f; // [0: 1]
-    float max_aspect_ratio = 10.0f;
+    float min_confidence = 0.0f; // [0: 1]
+    float max_aspect_ratio = 25.0f;
 
     int knn_neighbors = 20;
     int min_region_size = 10;

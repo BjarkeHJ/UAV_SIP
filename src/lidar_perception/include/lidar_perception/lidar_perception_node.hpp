@@ -35,7 +35,7 @@ public:
 
 private:
     void pointcloud_callback(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
-    void filtering(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
+    void preprocess(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
     void normal_estimation();
 
     // Visualization
