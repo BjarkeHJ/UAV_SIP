@@ -19,7 +19,7 @@ public:
         ELLIPSE_DISKS,
         NORMAL_ARROWS,
         CONFIDENCE_SPHERES,
-        WIREFRAME_ELLIPSEs,
+        WIREFRAME_ELLIPSES,
         COMBINED
     };
 
@@ -35,7 +35,7 @@ public:
 private:
 
     void create_ellipse_disk_markers(const std::vector<Surfel2D>& surfels, const std::string& frame_id, const rclcpp::Time& timestamp, visualization_msgs::msg::MarkerArray& marker_array);
-    void create_normal_arrows(const std::vector<Surfel2D>& surfels, const std::string& frame_id, const rclcpp::Time& timestamp, visualization_msgs::msg::MarkerArray& marker_array);
+    void create_normal_arrow_markers(const std::vector<Surfel2D>& surfels, const std::string& frame_id, const rclcpp::Time& timestamp, visualization_msgs::msg::MarkerArray& marker_array);
     void create_confidence_sphere_markers(const std::vector<Surfel2D>& surfels, const std::string& frame_id, const rclcpp::Time& timestamp, visualization_msgs::msg::MarkerArray& marker_array);
     void create_wireframe_ellipse_markers(const std::vector<Surfel2D>& surfels, const std::string& frame_id, const rclcpp::Time& timestamp, visualization_msgs::msg::MarkerArray& marker_array);
     std::vector<Eigen::Vector2f> generate_ellipse_points(float semi_major, float semi_minor, int num_points);
