@@ -36,15 +36,19 @@ public:
         // Downsampling
         int ds_factor = 2;
         
-        // Normal estimation 
+        // Normal estimation
         int normal_radius_px = 3;
         bool orient_towards_sensor = true;
-        
+
         // Range image smoothing (0 iterations for disabling)
-        int range_smooth_iters = 3; // bilateral filter iterations 
+        int range_smooth_iters = 3; // bilateral filter iterations
         float depth_sigma_m = 0.05f; // depth based weight
         float spatial_sigma_px = 1.0f; // spatial weight
         float max_depth_jump_m = 0.10f;
+
+        // Adaptive depth jump threshold
+        float gradient_scale = 2.0f; // scaling factor for gradient-based threshold adaptation
+        float max_threshold_multiplier = 5.0f; // upper bound on adaptive threshold (safety cap)
     };
 
     CloudPreprocess(const Params& p) : params_(p) {
@@ -280,27 +284,30 @@ private:
 
     void smooth_range_image() {
         if (params_.range_smooth_iters <= 0) return;
-        
+
         // Initialize smooth buffer to original
         range_smooth_ = range_img_;
-        
+
         const int R = std::max(1, params_.normal_radius_px);
         const float spatial_sigma = params_.spatial_sigma_px;
         const float depth_sigma = params_.depth_sigma_m;
-        const float max_jump = params_.max_depth_jump_m;
+        const float base_jump = params_.max_depth_jump_m;
+        const float gradient_scale = params_.gradient_scale;
+        const float max_multiplier = params_.max_threshold_multiplier;
+        const float ds_factor = static_cast<float>(ds_);
 
         const float inv_2sigma_sp_sq = 1.0f / (2.0f * spatial_sigma * spatial_sigma);
         const float inv_2sigmag_dp_sq = 1.0f / (2.0f * depth_sigma * depth_sigma);
 
         const int kernel_size = 2 * R + 1;
         std::vector<float> spatial_kernel(kernel_size);
-        
+
         // precompute spatial kernel (gaussian-ish)
         for (int i=0; i<kernel_size; ++i) {
             const float d = float(i - R);
             spatial_kernel[i] = std::exp(-d * d * inv_2sigma_sp_sq);
         }
-        
+
         // buffers
         std::vector<float> temp(W_ * H_);
         std::vector<float>* src = &range_smooth_;
@@ -315,12 +322,25 @@ private:
 
                     if (!std::isfinite(r_center)) {
                         (*dst)[idx_c] = r_center;
-                        continue; 
+                        continue;
                     }
+
+                    // Compute local gradient for adaptive threshold
+                    float grad_u = 0.0f;
+                    if (u > 0 && u < W_ - 1) {
+                        const float r_l = (*src)[idx(u - 1, v)];
+                        const float r_r = (*src)[idx(u + 1, v)];
+                        if (std::isfinite(r_l) && std::isfinite(r_r)) {
+                            grad_u = std::fabs(r_r - r_l) / (2.0f * ds_factor);
+                        }
+                    }
+
+                    const float threshold_mult = std::min(1.0f + gradient_scale * grad_u, max_multiplier);
+                    const float adaptive_jump = base_jump * threshold_mult;
 
                     float weight_sum = 0.0f;
                     float value_sum = 0.0f;
-                    
+
                     const int u_min = std::max(0, u - R);
                     const int u_max = std::min(W_ - 1, u + R);
 
@@ -329,7 +349,7 @@ private:
                         if (!std::isfinite(r)) continue;
 
                         const float dr = r - r_center;
-                        if (std::fabs(dr) > max_jump) continue;
+                        if (std::fabs(dr) > adaptive_jump) continue;
 
                         const float w_spatial = spatial_kernel[uu - u + R];
                         const float w_depth = std::exp(-dr * dr * inv_2sigmag_dp_sq);
@@ -339,7 +359,7 @@ private:
                         value_sum += w * r;
                     }
 
-                    (*dst)[idx_c] = (weight_sum < 1e-6f) ? (value_sum / weight_sum) : r_center;
+                    (*dst)[idx_c] = (weight_sum > 1e-6f) ? (value_sum / weight_sum) : r_center;
                 }
             }
 
@@ -354,11 +374,24 @@ private:
                 for (int u = 0; u < W_; ++u) {
                     const int idx_c = idx(u, v);
                     const float r_center = (*src)[idx_c];
-                    
+
                     if (!std::isfinite(r_center)) {
                         (*dst)[idx_c] = r_center;
                         continue;
                     }
+
+                    // Compute local gradient for adaptive threshold
+                    float grad_v = 0.0f;
+                    if (v > 0 && v < H_ - 1) {
+                        const float r_u = (*src)[idx(u, v - 1)];
+                        const float r_d = (*src)[idx(u, v + 1)];
+                        if (std::isfinite(r_u) && std::isfinite(r_d)) {
+                            grad_v = std::fabs(r_d - r_u) / (2.0f * ds_factor);
+                        }
+                    }
+
+                    const float threshold_mult = std::min(1.0f + gradient_scale * grad_v, max_multiplier);
+                    const float adaptive_jump = base_jump * threshold_mult;
 
                     float weight_sum = 0.0f;
                     float value_sum = 0.0f;
@@ -368,7 +401,7 @@ private:
                         if (!std::isfinite(r)) continue;
 
                         const float dr = r - r_center;
-                        if (std::fabs(dr) > max_jump) continue;
+                        if (std::fabs(dr) > adaptive_jump) continue;
 
                         const float w_spatial = spatial_kernel[vv - v + R];
                         const float w_depth = std::exp(-dr * dr * inv_2sigmag_dp_sq);
@@ -377,8 +410,8 @@ private:
                         weight_sum += w;
                         value_sum += w * r;
                     }
-                    
-                    (*dst)[idx_c] = (weight_sum < 1e-6f) ? (value_sum / weight_sum) : r_center;
+
+                    (*dst)[idx_c] = (weight_sum > 1e-6f) ? (value_sum / weight_sum) : r_center;
                 }
             }
 
@@ -395,7 +428,10 @@ private:
     void estimate_normals() {
         normals_out_->clear();
         normals_out_->resize(cloud_out_->size());
-        const float jump_thresh = params_.max_depth_jump_m;
+        const float base_threshold = params_.max_depth_jump_m;
+        const float gradient_scale = params_.gradient_scale;
+        const float max_multiplier = params_.max_threshold_multiplier;
+        const float ds_factor = static_cast<float>(ds_);
         size_t out_idx = 0;
 
         // use smoothed if enabled
@@ -414,6 +450,54 @@ private:
                 const Eigen::Vector3f Pc(center.point.x, center.point.y, center.point.z);
                 const float rc = range_to_use[idx_c];
 
+                // Compute range gradient magnitude (normalized by downsampling factor)
+                float grad_u = 0.0f;
+                float grad_v = 0.0f;
+
+                // Horizontal gradient
+                if (u > 0 && u < W_ - 1) {
+                    const float r_left = range_to_use[idx(u - 1, v)];
+                    const float r_right = range_to_use[idx(u + 1, v)];
+                    if (std::isfinite(r_left) && std::isfinite(r_right)) {
+                        grad_u = std::fabs(r_right - r_left) / (2.0f * ds_factor);
+                    }
+                } else if (u > 0) {
+                    const float r_left = range_to_use[idx(u - 1, v)];
+                    if (std::isfinite(r_left) && std::isfinite(rc)) {
+                        grad_u = std::fabs(rc - r_left) / ds_factor;
+                    }
+                } else if (u < W_ - 1) {
+                    const float r_right = range_to_use[idx(u + 1, v)];
+                    if (std::isfinite(r_right) && std::isfinite(rc)) {
+                        grad_u = std::fabs(r_right - rc) / ds_factor;
+                    }
+                }
+
+                // Vertical gradient
+                if (v > 0 && v < H_ - 1) {
+                    const float r_up = range_to_use[idx(u, v - 1)];
+                    const float r_down = range_to_use[idx(u, v + 1)];
+                    if (std::isfinite(r_up) && std::isfinite(r_down)) {
+                        grad_v = std::fabs(r_down - r_up) / (2.0f * ds_factor);
+                    }
+                } else if (v > 0) {
+                    const float r_up = range_to_use[idx(u, v - 1)];
+                    if (std::isfinite(r_up) && std::isfinite(rc)) {
+                        grad_v = std::fabs(rc - r_up) / ds_factor;
+                    }
+                } else if (v < H_ - 1) {
+                    const float r_down = range_to_use[idx(u, v + 1)];
+                    if (std::isfinite(r_down) && std::isfinite(rc)) {
+                        grad_v = std::fabs(r_down - rc) / ds_factor;
+                    }
+                }
+
+                const float grad_mag = std::sqrt(grad_u * grad_u + grad_v * grad_v);
+
+                // Adaptive threshold based on gradient
+                const float threshold_multiplier = std::min(1.0f + gradient_scale * grad_mag, max_multiplier);
+                const float adaptive_threshold = base_threshold * threshold_multiplier;
+
                 // fetch nb function
                 auto fetch_nb = [&](int du, int dv) -> std::pair<bool, Eigen::Vector3f> {
                     const int uu = u + du;
@@ -424,7 +508,7 @@ private:
                     if (!grid_ds_[idx_n].valid) return {false, {}};
 
                     const float rn = range_to_use[idx_n];
-                    if (!std::isfinite(rn) || std::fabs(rn - rc) > jump_thresh) return {false, {}};
+                    if (!std::isfinite(rn) || std::fabs(rn - rc) > adaptive_threshold) return {false, {}};
 
                     const auto& pt = grid_ds_[idx_n].point;
                     return {true, Eigen::Vector3f(pt.x, pt.y, pt.z)};
