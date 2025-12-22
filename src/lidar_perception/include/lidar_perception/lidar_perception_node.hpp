@@ -23,8 +23,11 @@
 #include <pcl/filters/statistical_outlier_removal.h>
 
 #include "lidar_perception/preprocess.hpp"
-#include "lidar_perception/surfel_mapping.hpp"
-#include "lidar_perception/surfel_debug_viz.hpp"
+#include "lidar_perception/surfel2d.hpp"
+#include "lidar_perception/surfel_extractor.hpp"
+#include "lidar_perception/surfel_visualizer.hpp"
+
+using namespace surface_inspection_planner;
 
 class LidarPerceptionNode : public rclcpp::Node {
 public:
@@ -32,7 +35,7 @@ public:
 
 private:
     void pointcloud_callback(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
-    void filtering(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
+    void preprocess(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
     void normal_estimation();
 
     // Visualization
@@ -64,11 +67,16 @@ private:
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_buff_;
 
     pcl::search::KdTree<pcl::PointXYZ>::Ptr tree_;
-
     std::unique_ptr<CloudPreprocess> preproc_;
-    std::shared_ptr<SurfelMapping> smapper_;
+    std::unique_ptr<SurfelExtractor> surfel_extract_;
 
-    std::unique_ptr<SurfelDebugViz> surfel_viz_;
+    /* VISUALIZATION */
+    rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr surfel_viz_pub_;
+    rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr surfel_ellipse_pub_;
+    rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr surfel_normals_pub_;
+    rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr surfel_wireframe_pub_;
+    std::unique_ptr<SurfelVisualizer> surfel_viz_;
+
 
 };
 
