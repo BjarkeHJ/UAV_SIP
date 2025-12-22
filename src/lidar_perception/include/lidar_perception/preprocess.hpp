@@ -44,7 +44,7 @@ public:
         int range_smooth_iters = 3; // bilateral filter iterations 
         float depth_sigma_m = 0.05f; // depth based weight
         float spatial_sigma_px = 1.0f; // spatial weight
-        float max_depth_jump_m = 0.10f; // kernel "pixel" radius
+        float max_depth_jump_m = 0.10f;
     };
 
     CloudPreprocess(const Params& p) : params_(p) {

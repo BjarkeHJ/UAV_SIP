@@ -78,12 +78,21 @@ void LidarPerceptionNode::pointcloud_callback(const sensor_msgs::msg::PointCloud
         RCLCPP_ERROR(this->get_logger(), "Transform Lookup Failed: %s", ex.what());
     }
     
+    /*
+    TODO: Dont transform in preprocess (the gnd filtering will still work)
+    Extract local surfels in drone frame and transform only surfels to global frame
+
+    TODO: Range-dependent depth-thresholding for smoothing and surface normal estimation due to lidar sparsity at longer ranges
+    */
+
     auto t1 = std::chrono::high_resolution_clock::now();
     preprocess(msg);
     auto t2 = std::chrono::high_resolution_clock::now();
     std::vector<Surfel2D> extracted_surfels = surfel_extract_->extract_surfels(latest_cloud_, latest_normals_);
     auto t3 = std::chrono::high_resolution_clock::now();
     
+    /* TRANSFORM SURFELS HERE! before registration and fusion */
+
     std::chrono::duration<double> tfilt = t2-t1;
     std::cout << "Preprocessing Time: " << tfilt.count() << std::endl;
     std::cout << "Downsampled PointCloud Size: " << latest_cloud_->points.size() << std::endl;
