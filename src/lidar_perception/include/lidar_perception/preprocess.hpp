@@ -47,8 +47,9 @@ public:
         float max_depth_jump_m = 0.10f;
 
         // Adaptive depth jump threshold
-        float gradient_scale = 2.0f; // scaling factor for gradient-based threshold adaptation
+        float gradient_scale = 10.0f; // scaling factor for gradient-based threshold adaptation
         float max_threshold_multiplier = 5.0f; // upper bound on adaptive threshold (safety cap)
+        
     };
 
     CloudPreprocess(const Params& p) : params_(p) {
