@@ -17,15 +17,9 @@
 #include <pcl/common/common.h>
 #include <pcl/common/transforms.h>
 #include <pcl/features/normal_3d.h>
-#include <pcl/filters/filter.h>
-#include <pcl/filters/voxel_grid.h>
-#include <pcl/filters/passthrough.h>
-#include <pcl/filters/statistical_outlier_removal.h>
 
 #include "lidar_perception/preprocess.hpp"
 #include "lidar_perception/surfel2d.hpp"
-#include "lidar_perception/surfel_extractor.hpp"
-#include "lidar_perception/surfel_visualizer.hpp"
 
 using namespace surface_inspection_planner;
 
@@ -68,15 +62,6 @@ private:
 
     pcl::search::KdTree<pcl::PointXYZ>::Ptr tree_;
     std::unique_ptr<CloudPreprocess> preproc_;
-    std::unique_ptr<SurfelExtractor> surfel_extract_;
-
-    /* VISUALIZATION */
-    rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr surfel_viz_pub_;
-    rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr surfel_ellipse_pub_;
-    rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr surfel_normals_pub_;
-    rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr surfel_wireframe_pub_;
-    std::unique_ptr<SurfelVisualizer> surfel_viz_;
-
 
 };
 
