@@ -8,11 +8,21 @@
 
 namespace surface_inspection_planning {
 
+struct ConfidenceParams {
+    float support_halflife = 100.0f;      // Points for c_support ≈ 0.63
+    float fit_sigma = 0.02f;              // RMS error (m) for c_fit ≈ 0.37
+    float observation_halflife = 5.0f;    // Frames for c_temporal ≈ 0.63
+    float temporal_weight = 0.3f;         // Balance between frame count and diversity
+};
+
 struct Surfel {
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
     // Identifier
     uint64_t id = 0;
+    int32_t voxel_x = 0;
+    int32_t voxel_y = 0;
+    int32_t voxel_z = 0;
 
     // Geometric Properties (World Frame)
     Eigen::Vector3f center = Eigen::Vector3f::Zero();
@@ -30,7 +40,9 @@ struct Surfel {
     Eigen::Vector2f sum_tangent = Eigen::Vector2f::Zero();
     Eigen::Matrix2f sum_outer = Eigen::Matrix2f::Zero();
     Eigen::Vector3f sum_normals = Eigen::Vector3f::Zero();
+    float sum_sq_normal_dist = 0.0f;
     uint32_t point_count = 0;
+    uint32_t observation_count = 0;
 
     // Confidence metric
     float confidence = 0.0f;
@@ -40,7 +52,6 @@ struct Surfel {
     // Temporal info
     uint64_t creation_stamp = 0;
     uint64_t last_update_stamp = 0;
-    uint32_t observation_count = 0;
 
     // State flags
     bool is_valid = false;
@@ -60,13 +71,14 @@ struct Surfel {
         sum_tangent = Eigen::Vector2f::Zero();
         sum_outer = Eigen::Matrix2f::Zero();
         sum_normals = normal;
+        sum_sq_normal_dist = 0.0f;
         point_count = 1;
+        observation_count = 1;
 
-        confidence = 0.1f;
+        confidence = 0.01f;
         planarity = 1.0f;
         rms_error = 0.0f;
 
-        observation_count = 1;
         is_valid = true;
         needs_eigen_update = false;
     }
@@ -127,16 +139,50 @@ struct Surfel {
 
     void recompute_covariance() {
         if (point_count < 3 || total_weight < 1e-6f) return;
-
         Eigen::Vector2f mean = sum_tangent / total_weight;
-        // E[xx^T] - E[x]E[x]^T
-        covariance = (sum_outer / total_weight) - (mean * mean.transpose());
-        // add small regularization for stability
-        covariance += Eigen::Matrix2f::Identity() * 1e-6f;
-        // ensure symmetry
-        covariance = (covariance + covariance.transpose()) * 0.5f;
-        
+        covariance = (sum_outer / total_weight) - (mean * mean.transpose()); // E[xx^T] - E[x]E[x]^T
+        covariance += Eigen::Matrix2f::Identity() * 1e-6f; // regularization
+        covariance = (covariance + covariance.transpose()) * 0.5f; // ensure symmetry
         needs_eigen_update = true;
+    }
+
+    void update_confidence(const ConfidenceParams& params) {
+        // Support: more points -> higher confidence
+        float c_support = 1.0f - std::exp(-static_cast<float>(point_count) / params.support_halflife);
+        // Fit: lower RMS error -> higher confidence
+        float rms = get_rms_error();
+        float c_fit = std::exp(-(rms * rms) / (params.fit_sigma * params.fit_sigma));
+        // Planar: 
+        // Normal Consistency: Better alignment -> higher confidence
+        float c_normal = get_normal_consistency();
+        // Temporal: Seen accros multiple frames -> higher confidence
+        float c_temporal = get_temporal_score(params.observation_halflife, params.temporal_weight);
+    
+        confidence = c_support * c_fit * c_normal * c_temporal;
+    }
+
+    float get_rms_error() const {
+        return (point_count > 0) ? std::sqrt(sum_sq_normal_dist) / static_cast<float>(point_count) : 0.0f;
+    }
+
+    float get_planarity() const {
+        float lambda_max = eigenvalues.maxCoeff();
+        float lambda_min = eigenvalues.minCoeff();
+        return (lambda_max > 1e-8f) ? (lambda_max - lambda_min) / lambda_max : 0.0f;
+    }
+
+    float get_normal_consistency() const {
+        if (total_weight < 1e-6f) return 0.0f;
+        // if fused normals are identical -> ||sum_normals|| = total_weight
+        float consistency_raw = sum_normals.norm() / total_weight;
+        return std::clamp(std::pow(consistency_raw, 2.0f), 0.0f, 1.0f);
+    }
+
+    float get_temporal_score(float halflife, float diversity_w) const {
+        float saturation = 1.0f - std::exp(-static_cast<float>(observation_count) / halflife);
+        float diversity = (point_count > 0) ? static_cast<float>(observation_count) / static_cast<float>(point_count) : 0.0f;
+        diversity = std::min(1.0f, diversity);
+        return saturation * (1.0f - diversity) + diversity * diversity_w;
     }
 
     float get_radius() const {
@@ -146,10 +192,7 @@ struct Surfel {
     float get_bounding_radius() const {
         return 3.0 * get_radius();
     }
-
 };
-
-
 
 }; // end namespace
 

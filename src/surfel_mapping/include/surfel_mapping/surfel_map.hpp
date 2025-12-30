@@ -44,7 +44,7 @@ public:
 
         // Association thresholds
         float normal_thresh_deg = 30.0f;
-        float mahal_thresh = 9.21f; //Chi-squared 99% for 2DOF
+        float mahal_thresh = 9.21f; // Chi-squared 99% for 2DOF
         float normal_dist_thresh = 0.1f;
 
         // Confidence parameters

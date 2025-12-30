@@ -34,13 +34,15 @@ public:
         float max_confidence = 1.0f;
 
         // New surfel creation
-        uint32_t min_points_for_new_surfel = 10;
-        float new_surfel_initial_radius = 0.1f;
+        uint32_t min_points_for_new_surfel = 5;
+        float new_surfel_initial_radius = 0.05f;
         float new_surfel_coherence_thresh = 0.15f; // max spread for coherent cluster
 
         // Point accumulator management
         size_t max_accumulator_size = 5000;
         uint32_t accumulator_process_interval = 5; // process every x frames
+
+        ConfidenceParams confidence; // params for surfel fusion confidence tracking (in surfel.hpp)
     };
 
     struct FusionStats {

@@ -87,7 +87,10 @@ void SurfelFusion::fuse_point_to_surfel(size_t surfel_idx, const Eigen::Vector3f
 
     auto [tangent_coords, normal_dist] = surfel.project_point(point);
 
-    float weight = params_.base_point_weight;
+    // Accumulate surface fit (squared)
+    surfel.sum_sq_normal_dist += normal_dist * normal_dist;
+
+    const float weight = params_.base_point_weight;
 
     // Update center (weighe EMA)
     float alpha_c = params_.center_update_rate * weight / (surfel.total_weight + weight);
@@ -125,15 +128,25 @@ void SurfelFusion::fuse_point_to_surfel(size_t surfel_idx, const Eigen::Vector3f
         surfel.covariance = surfel.eigenvectors * surfel.eigenvalues.asDiagonal() * surfel.eigenvectors.transpose();
     }
 
-    // update confidence
-    surfel.confidence = std::min(params_.max_confidence, surfel.confidence + params_.confidence_boost);
+    // Temporal tracking
+    if (surfel.last_update_stamp != timestamp) {
+        surfel.observation_count++;
+    }
+    surfel.last_update_stamp = timestamp;
+
+    // Update confidence
+    surfel.update_confidence(params_.confidence);
+
+    // update confidence (very naive - even bad fusion will increase confidence?)
+    // surfel.confidence = std::min(params_.max_confidence, surfel.confidence + params_.confidence_boost);
 
     // timestamp and counters
-    surfel.last_update_stamp = timestamp;
-    surfel.observation_count++;
+    // surfel.last_update_stamp = timestamp;
+    // surfel.observation_count++;
 
-    // OBS!!
-    // Should update spatial index if center moved significantly??
+    // Update spatial index in case surfel center now belongs to different voxel 
+    // (should do additional check with other surfel in new voxel??)
+    map_.update_spatial_index(surfel_idx);
 }
 
 void SurfelFusion::accumulate_point(const Eigen::Vector3f& point, const Eigen::Vector3f& normal, uint64_t timestamp) {
@@ -147,7 +160,7 @@ void SurfelFusion::accumulate_point(const Eigen::Vector3f& point, const Eigen::V
 void SurfelFusion::process_accumulator(uint64_t timestamp) {
     if (point_accumulator_.size() < params_.min_points_for_new_surfel) return;
 
-    float cluster_size = params_.new_surfel_coherence_thresh * 2.0f;
+    float cluster_size = params_.new_surfel_coherence_thresh * 2.0f; // cluster diameter
     float inv_size = 1.0f / cluster_size;
 
     struct ClusterCell {
@@ -164,11 +177,11 @@ void SurfelFusion::process_accumulator(uint64_t timestamp) {
         int32_t y = static_cast<int32_t>(std::floor(p.y() * inv_size));
         int32_t z = static_cast<int32_t>(std::floor(p.z() * inv_size));
         return (static_cast<int64_t>(x) << 42) ^ 
-                (static_cast<int64_t>(y) << 21) ^ 
+               (static_cast<int64_t>(y) << 21) ^ 
                 static_cast<int64_t>(z);
     };
 
-    // assign to clusters
+    // assign to clusters and collect data statistics
     for (size_t i = 0; i < point_accumulator_.size(); ++i) {
         const auto& ap = point_accumulator_[i];
         int64_t hash = hash_point(ap.position);
@@ -180,7 +193,6 @@ void SurfelFusion::process_accumulator(uint64_t timestamp) {
 
     // create surfels from valid clusters
     std::vector<size_t> points_to_remove;
-
     for (auto& [hash, cell] : clusters) {
         if (cell.point_indices.size() < params_.min_points_for_new_surfel) continue;
 
@@ -188,9 +200,10 @@ void SurfelFusion::process_accumulator(uint64_t timestamp) {
         Eigen::Vector3f center = cell.center_sum / static_cast<float>(cell.point_indices.size());
         Eigen::Vector3f normal = cell.normal_sum.normalized();
 
-        // check if coherent
+        // check if spatially coherent
         float max_dist_sq = 0.0f;
         for (size_t idx : cell.point_indices) {
+            // distance to centroid -> store max distance in cluster
             float d_sq = (point_accumulator_[idx].position - center).squaredNorm();
             max_dist_sq = std::max(max_dist_sq, d_sq);
         }
@@ -206,11 +219,11 @@ void SurfelFusion::process_accumulator(uint64_t timestamp) {
         normal_variance /= static_cast<float>(cell.point_indices.size());
         if (normal_variance > 0.3f) continue;
 
-        // create new surfel
+        // create new surfel from cluster centroid, avg cluster normal, some init radius
         map_.create_surfel(center, normal, params_.new_surfel_initial_radius, timestamp);
         last_stats_.surfels_created++;
 
-        // mark points in cluster for removal
+        // mark points in cluster for removal (removed from accumulator)
         for (size_t idx : cell.point_indices) {
             points_to_remove.push_back(idx);
         }

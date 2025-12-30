@@ -339,7 +339,7 @@ private:
                         value_sum += w * r;
                     }
 
-                    (*dst)[idx_c] = (weight_sum < 1e-6f) ? (value_sum / weight_sum) : r_center;
+                    (*dst)[idx_c] = (weight_sum > 1e-6f) ? (value_sum / weight_sum) : r_center;
                 }
             }
 
@@ -378,7 +378,7 @@ private:
                         value_sum += w * r;
                     }
                     
-                    (*dst)[idx_c] = (weight_sum < 1e-6f) ? (value_sum / weight_sum) : r_center;
+                    (*dst)[idx_c] = (weight_sum > 1e-6f) ? (value_sum / weight_sum) : r_center;
                 }
             }
 
