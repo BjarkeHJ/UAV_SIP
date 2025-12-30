@@ -92,7 +92,7 @@ int SurfelMap::find_best_association(const Eigen::Vector3f& point, const Eigen::
 }
 
 void SurfelMap::update_spatial_index(size_t surfel_idx) {
-    // Takes surfel index and remaps to new voxel
+    // Takes surfel index and remaps to new voxel if center changed significantly
     if (surfel_idx >= surfels_.size()) return;
     
     Surfel& surfel = surfels_[surfel_idx];
@@ -102,13 +102,13 @@ void SurfelMap::update_spatial_index(size_t surfel_idx) {
     if (new_key.x == surfel.voxel_x && 
         new_key.y == surfel.voxel_y && 
         new_key.z == surfel.voxel_z) {
-        return;  // O(1) early exit
+        return;
     }
     
     // Slow path: voxel changed, need to update index
     VoxelKey old_key{surfel.voxel_x, surfel.voxel_y, surfel.voxel_z};
     
-    // Remove from old voxel - O(1) lookup + O(S) removal
+    // Remove from old voxel 
     auto old_it = voxel_index_.find(old_key);
     if (old_it != voxel_index_.end()) {
         auto& indices = old_it->second;
@@ -124,29 +124,13 @@ void SurfelMap::update_spatial_index(size_t surfel_idx) {
         }
     }
     
-    // Add to new voxel - O(1)
+    // Add to new voxel
     voxel_index_[new_key].push_back(surfel_idx);
     
     // Update cache
     surfel.voxel_x = new_key.x;
     surfel.voxel_y = new_key.y;
     surfel.voxel_z = new_key.z;
-    
-    // if (surfel_idx >= surfels_.size()) return;
-    // const Surfel& surfel = surfels_[surfel_idx];
-    // VoxelKey new_key = point_to_voxel(surfel.center);
-
-    // // remove key from old voxel(s) - could be optimized (maybe surfel stores it own voxel key?)
-    // for (auto& [key, indices] : voxel_index_) {
-    //     // find surfel index in voxel ()
-    //     auto it = std::find(indices.begin(), indices.end(), surfel_idx);
-    //     if (it != indices.end()) {
-    //         indices.erase(it);
-    //     }
-    // }
-
-    // // add to new voxel
-    // voxel_index_[new_key].push_back(surfel_idx);
 }
 
 void SurfelMap::prune_and_rebuild() {

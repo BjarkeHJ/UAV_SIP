@@ -144,8 +144,6 @@ void SurfelFusion::fuse_point_to_surfel(size_t surfel_idx, const Eigen::Vector3f
     // surfel.last_update_stamp = timestamp;
     // surfel.observation_count++;
 
-    // Update spatial index in case surfel center now belongs to different voxel 
-    // (should do additional check with other surfel in new voxel??)
     map_.update_spatial_index(surfel_idx);
 }
 
