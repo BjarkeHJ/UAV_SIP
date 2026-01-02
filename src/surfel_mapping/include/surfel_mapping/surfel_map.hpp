@@ -29,6 +29,8 @@ struct VoxelKeyHash {
     }
 };
 
+static constexpr size_t INVALID_SURFEL_IDX = std::numeric_limits<size_t>::max();
+
 class SurfelMap {
 public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -38,14 +40,18 @@ public:
         float voxel_size = 0.5f;
 
         // Creation/Merging thresholds
-        size_t max_surfels_per_voxel = 25;
-        float min_surfel_radius = 0.02f;
+        size_t max_surfels_per_voxel = 1;
+        float min_surfel_radius = 0.1f;
         float max_surfel_radius = 0.5f;
 
         // Association thresholds
         float normal_thresh_deg = 30.0f;
         float mahal_thresh = 9.21f; // Chi-squared 99% for 2DOF
         float normal_dist_thresh = 0.1f;
+
+        // Merging parameters
+        float merge_center_dist = 0.1f;
+        float merge_normal_dot = 0.95f;
 
         // Confidence parameters
         float confidence_decay = 0.99f;
@@ -76,25 +82,31 @@ public:
 
     size_t add_surfel(const Surfel& surfel);
     size_t create_surfel(const Eigen::Vector3f& center, const Eigen::Vector3f& normal, float radius, uint64_t timestamp = 0);
+    size_t find_merge_target(const Eigen::Vector3f& center, const Eigen::Vector3f& normal) const;
 
     void find_association_candidates(const Eigen::Vector3f& point, const Eigen::Vector3f& normal, std::vector<std::pair<size_t, float>>& candidates) const;
     int find_best_association(const Eigen::Vector3f& point, const Eigen::Vector3f& normal) const;
     void update_spatial_index(size_t surfel_idx);
     void prune_and_rebuild();
     void apply_confidence_decay();
-        
+    size_t merge_similar_surfels();
+    
     struct MapStats {
         size_t total_surfels = 0;
         size_t valid_surfels = 0;
         size_t voxels_occupied = 0;
+        size_t surfels_merged = 0;
         float avg_confidence = 0.0f;
         float avg_point_count = 0.0f;
+        float avg_radius = 0.0f;
     };
-
     MapStats get_stats() const;
     
 private:
     VoxelKey point_to_voxel(const Eigen::Vector3f& p) const;
+    void merge_surfels(size_t into_idx, size_t from_idx);
+    bool should_merge(const Surfel& s1, const Surfel& s2) const;
+    size_t find_weakest_in_voxel(const VoxelKey& key) const;
 
     Params params_;
     float cos_normal_thresh_;

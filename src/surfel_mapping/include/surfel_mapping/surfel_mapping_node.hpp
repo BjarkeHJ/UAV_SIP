@@ -19,6 +19,12 @@
 
 namespace surface_inspection_planning {
 
+enum class SurfelColorMode {
+    CONFIDENCE,
+    POINT_COUNT,
+    NORMAL_DIRECTION
+};
+
 class SurfelMappingNode : public rclcpp::Node {
 public:
     SurfelMappingNode();

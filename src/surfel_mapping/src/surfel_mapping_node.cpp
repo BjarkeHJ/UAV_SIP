@@ -63,13 +63,16 @@ void SurfelMappingNode::declare_parameters() {
     this->declare_parameter("map.normal_dist_thresh", 0.1);
     this->declare_parameter("map.min_surfel_radius", 0.02);
     this->declare_parameter("map.max_surfel_radius", 0.5);
+    this->declare_parameter("map.max_surfels_per_voxel", 6);
 
     // Fusion Parameters
     this->declare_parameter("fuser.min_points_for_new_surfel", 5);
     this->declare_parameter("fuser.new_surfel_initial_radius", 0.1);
     this->declare_parameter("fuser.center_update_rate", 0.3);
     this->declare_parameter("fuser.normal_update_rate", 0.1);
-    this->declare_parameter("fuser.confidence_boost", 0.05);
+
+    // Visualization
+    this->declare_parameter("viz.viz_color_mode", "normal");
 }
 
 void SurfelMappingNode::initialize_preprocessor() {
@@ -96,13 +99,14 @@ void SurfelMappingNode::initialize_fuser() {
     mp.normal_dist_thresh = this->get_parameter("map.normal_dist_thresh").as_double();
     mp.min_surfel_radius = this->get_parameter("map.min_surfel_radius").as_double();
     mp.max_surfel_radius = this->get_parameter("map.max_surfel_radius").as_double();
-    
+    mp.max_surfels_per_voxel = this->get_parameter("map.max_surfels_per_voxel").as_int();
+
     SurfelFusion::Params fp;
     fp.min_points_for_new_surfel = this->get_parameter("fuser.min_points_for_new_surfel").as_int();
     fp.new_surfel_initial_radius = this->get_parameter("fuser.new_surfel_initial_radius").as_double();
     fp.center_update_rate = this->get_parameter("fuser.center_update_rate").as_double();
     fp.normal_update_rate = this->get_parameter("fuser.normal_update_rate").as_double();
-    
+
     fuser_ = std::make_unique<SurfelFusion>(fp, mp);
 }
 
@@ -132,10 +136,7 @@ void SurfelMappingNode::cloud_callback(const sensor_msgs::msg::PointCloud2::Shar
     // preprocessor_->transform_output_to_world();
     auto pp_end = std::chrono::high_resolution_clock::now();
     double pp_time = std::chrono::duration<double, std::milli>(pp_end - pp_start).count();
-    RCLCPP_INFO(this->get_logger(),
-        "Preprocess Time: %.f ms", pp_time
-    );
-
+    
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);
     pcl::PointCloud<pcl::Normal>::Ptr normals(new pcl::PointCloud<pcl::Normal>);
     preprocessor_->get_points(cloud);
@@ -147,12 +148,16 @@ void SurfelMappingNode::cloud_callback(const sensor_msgs::msg::PointCloud2::Shar
     uint64_t timestamp = rclcpp::Time(msg->header.stamp).nanoseconds();
     fuser_->process_scan(cloud, normals, pose, timestamp);
 
+    // RCLCPP_INFO(this->get_logger(),
+    //     "Preprocess Time: %.f ms", pp_time
+    // );
+
     const auto& stats = fuser_->last_stats();
-    RCLCPP_INFO(this->get_logger(),
-        "Fusion: %zu pts, %zu assoc, %zu new surfels, %.f ms",
-        stats.points_processed, stats.points_associated,
-        stats.surfels_created, stats.processing_time_ms
-    );
+    // RCLCPP_INFO(this->get_logger(),
+    //     "Fusion: %zu pts, %zu assoc, %zu new surfels, %.f ms",
+    //     stats.points_processed, stats.points_associated,
+    //     stats.surfels_created, stats.processing_time_ms
+    // );
 
     if (processed_cloud_pub_->get_subscription_count() > 0) {
         sensor_msgs::msg::PointCloud2 out_msg;
@@ -190,6 +195,20 @@ void SurfelMappingNode::publish_visualization() {
     std::string world_frame = this->get_parameter("world_frame").as_string();
     auto now = this->get_clock()->now();
     
+    // Get color mode from parameter
+    std::string color_mode_str = this->get_parameter("viz.viz_color_mode").as_string();
+    SurfelColorMode color_mode = SurfelColorMode::CONFIDENCE;
+    if (color_mode_str == "normal") color_mode = SurfelColorMode::NORMAL_DIRECTION;
+    else if (color_mode_str == "point_count") color_mode = SurfelColorMode::POINT_COUNT;
+    
+    // Delete old markers first
+    visualization_msgs::msg::Marker delete_marker;
+    delete_marker.header.frame_id = world_frame;
+    delete_marker.header.stamp = now;
+    delete_marker.action = visualization_msgs::msg::Marker::DELETEALL;
+    delete_marker.ns = "surfel_ellipses";
+    markers.markers.push_back(delete_marker);
+    
     // Surfel ellipses
     visualization_msgs::msg::Marker ellipse_marker;
     ellipse_marker.header.frame_id = world_frame;
@@ -206,51 +225,42 @@ void SurfelMappingNode::publish_visualization() {
     normal_marker.type = visualization_msgs::msg::Marker::LINE_LIST;
     normal_marker.action = visualization_msgs::msg::Marker::ADD;
     normal_marker.id = 0;
-    normal_marker.scale.x = 0.005;
+    normal_marker.scale.x = 0.01;
     normal_marker.color.r = 0.0f;
     normal_marker.color.g = 0.0f;
-    normal_marker.color.b = 1.0f;
+    normal_marker.color.b = 0.0f;
     normal_marker.color.a = 0.8f;
     
     int id = 0;
     for (const auto& surfel : surfels) {
         if (!surfel.is_valid) continue;
         
-        // Ellipse Visualization
         ellipse_marker.id = id++;
         ellipse_marker.pose.position.x = surfel.center.x();
         ellipse_marker.pose.position.y = surfel.center.y();
         ellipse_marker.pose.position.z = surfel.center.z();
         
-        // Get eigenvalues (standard deviations along principal axes)
+        // Compute orientation
         float sigma1 = std::sqrt(std::max(surfel.eigenvalues(0), 1e-6f));
         float sigma2 = std::sqrt(std::max(surfel.eigenvalues(1), 1e-6f));
         
-        // Eigenvectors in 2D tangent space
         Eigen::Vector2f ev1_2d = surfel.eigenvectors.col(0);
         Eigen::Vector2f ev2_2d = surfel.eigenvectors.col(1);
         
-        // Transform eigenvectors to 3D world space using tangent basis
-        // principal_axis_1 = ev1_2d.x * tangent_u + ev1_2d.y * tangent_v
         Eigen::Vector3f principal_axis_1 = (ev1_2d.x() * surfel.tangent_u + 
                                             ev1_2d.y() * surfel.tangent_v).normalized();
         Eigen::Vector3f principal_axis_2 = (ev2_2d.x() * surfel.tangent_u + 
                                             ev2_2d.y() * surfel.tangent_v).normalized();
         
-        // Build rotation matrix: columns are the local axes
-        // For CYLINDER marker: X and Y are the disc plane, Z is the axis (normal)
-        // We want: local X → principal_axis_1, local Y → principal_axis_2, local Z → normal
         Eigen::Matrix3f R;
         R.col(0) = principal_axis_1;
         R.col(1) = principal_axis_2;
         R.col(2) = surfel.normal;
         
-        // Ensure right-handed (fix if eigenvectors created left-handed system)
         if (R.determinant() < 0) {
             R.col(1) = -R.col(1);
         }
         
-        // Convert rotation matrix to quaternion
         Eigen::Quaternionf q(R);
         q.normalize();
         
@@ -259,23 +269,51 @@ void SurfelMappingNode::publish_visualization() {
         ellipse_marker.pose.orientation.z = q.z();
         ellipse_marker.pose.orientation.w = q.w();
         
-        // Scale: diameter along each principal axis (2 * sigma for 1-sigma ellipse)
-        // Use 2-sigma for better visibility
         const float sigma_scale = 1.0f;
-        ellipse_marker.scale.x = sigma1 * 2.0f * sigma_scale;  // Diameter along principal axis 1
-        ellipse_marker.scale.y = sigma2 * 2.0f * sigma_scale;  // Diameter along principal axis 2
-        ellipse_marker.scale.z = 0.005f;                       // Thin disc
+        ellipse_marker.scale.x = sigma1 * 2.0f * sigma_scale;
+        ellipse_marker.scale.y = sigma2 * 2.0f * sigma_scale;
+        ellipse_marker.scale.z = 0.005f;
         
-        // Color based on confidence
-        float conf = std::clamp(surfel.confidence, 0.0f, 1.0f);
-        ellipse_marker.color.r = 1.0f - conf;
-        ellipse_marker.color.g = conf;
-        ellipse_marker.color.b = 0.2f;
-        ellipse_marker.color.a = 0.6f;
-        
+        // === COLOR BASED ON MODE ===
+        switch (color_mode) {
+            case SurfelColorMode::NORMAL_DIRECTION: {
+                // Map normal to RGB (like a normal map)
+                // normal components are in [-1, 1], map to [0, 1]
+                ellipse_marker.color.r = (surfel.normal.x() + 1.0f) * 0.5f;
+                ellipse_marker.color.g = (surfel.normal.y() + 1.0f) * 0.5f;
+                ellipse_marker.color.b = (surfel.normal.z() + 1.0f) * 0.5f;
+                ellipse_marker.color.a = 0.8f;
+                break;
+            }
+            case SurfelColorMode::POINT_COUNT: {
+                // Color by observation count (blue→green→yellow→red)
+                float normalized = std::min(1.0f, static_cast<float>(surfel.point_count) / 200.0f);
+                if (normalized < 0.5f) {
+                    ellipse_marker.color.r = 0.0f;
+                    ellipse_marker.color.g = normalized * 2.0f;
+                    ellipse_marker.color.b = 1.0f - normalized * 2.0f;
+                } else {
+                    ellipse_marker.color.r = (normalized - 0.5f) * 2.0f;
+                    ellipse_marker.color.g = 1.0f - (normalized - 0.5f) * 2.0f;
+                    ellipse_marker.color.b = 0.0f;
+                }
+                ellipse_marker.color.a = 0.7f;
+                break;
+            }
+            case SurfelColorMode::CONFIDENCE:
+            default: {
+                float conf = std::clamp(surfel.confidence, 0.0f, 1.0f);
+                ellipse_marker.color.r = 1.0f - conf;
+                ellipse_marker.color.g = conf;
+                ellipse_marker.color.b = 0.2f;
+                ellipse_marker.color.a = 0.6f;
+                break;
+            }
+        }
+
         markers.markers.push_back(ellipse_marker);
         
-        // --- Normal line ---
+        // Normal line
         geometry_msgs::msg::Point p1, p2;
         p1.x = surfel.center.x();
         p1.y = surfel.center.y();
@@ -291,23 +329,13 @@ void SurfelMappingNode::publish_visualization() {
     }
     
     markers.markers.push_back(normal_marker);
-    
-    // Delete old markers (send deleteall first, then new markers)
-    visualization_msgs::msg::Marker delete_marker;
-    delete_marker.header.frame_id = world_frame;
-    delete_marker.header.stamp = now;
-    delete_marker.action = visualization_msgs::msg::Marker::DELETEALL;
-    delete_marker.ns = "surfel_ellipses";
-    // Note: DELETEALL should be sent in a separate publish or handled differently
-    // For simplicity, we rely on marker IDs being reused
-    
     surfel_marker_pub_->publish(markers);
     
-    // Log map stats
     auto stats = fuser_->map().get_stats();
     RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
-        "Map: %zu surfels, %zu voxels, avg conf: %.2f, avg pts: %.1f",
+        "Map: %zu surfels, %zu voxels, avg_r: %.3fm, avg conf: %.2f",
         stats.valid_surfels, stats.voxels_occupied, 
-        stats.avg_confidence, stats.avg_point_count);    
+        stats.avg_radius, stats.avg_confidence);
 }
+
 };

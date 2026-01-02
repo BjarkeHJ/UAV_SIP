@@ -34,7 +34,7 @@ public:
 
         // New surfel creation
         uint32_t min_points_for_new_surfel = 5;
-        float new_surfel_initial_radius = 0.05f;
+        float new_surfel_initial_radius = 0.01f;
         float new_surfel_coherence_thresh = 0.15f; // max spread for coherent cluster
 
         // Point accumulator management
@@ -51,6 +51,7 @@ public:
         size_t points_rejected = 0;
         size_t surfels_updated = 0;
         size_t surfels_created = 0;
+        size_t surfels_merged = 0;
         double processing_time_ms = 0.0;
     };
 

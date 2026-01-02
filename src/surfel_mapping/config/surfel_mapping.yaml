@@ -54,15 +54,15 @@ surfel_mapping_node:
 
     # Preprocessor settings (match your ToF sensor)
     preprocess:
-      width: 240           # Sensor horizontal resolution
-      height: 180          # Sensor vertical resolution
-      hfov_deg: 106.0      # Horizontal FOV in degrees
-      vfov_deg: 86.0       # Vertical FOV in degrees
-      ds_factor: 1         # Downsampling factor (2 = half resolution)
-      min_range: 0.1       # Minimum valid range (m)
-      max_range: 10.0      # Maximum valid range (m)
+      width: 240             # Sensor horizontal resolution
+      height: 180            # Sensor vertical resolution
+      hfov_deg: 106.0        # Horizontal FOV in degrees
+      vfov_deg: 86.0         # Vertical FOV in degrees
+      ds_factor: 1           # Downsampling factor (2 = half resolution)
+      min_range: 0.1         # Minimum valid range (m)
+      max_range: 10.0        # Maximum valid range (m)
       enable_gnd_filter: true
-      gnd_z_min: 0.25      # Ground filter height threshold (m)
+      gnd_z_min: 0.25        # Ground filter height threshold (m)
       range_smooth_iters: 3  # Bilateral filter iterations (0 to disable)
 
     # Surfel map settings
@@ -70,9 +70,9 @@ surfel_mapping_node:
       voxel_size: 0.5           # Spatial hash voxel size (m)
       normal_thresh_deg: 30.0   # Max normal angle difference for association
       mahal_thresh: 9.21        # Mahalanobis threshold (chi-squared 99% for 2 DOF)
-      normal_dist_thresh: 0.5   # Max distance along normal for association (m)
-      min_surfel_radius: 0.01   # Minimum surfel size (m)
-      max_surfel_radius: 1.0    # Maximum surfel size (m)
+      normal_dist_thresh: 0.1   # Max distance along normal for association (m)
+      min_surfel_radius: 0.015  # Minimum surfel size (m)
+      max_surfel_radius: 0.5    # Maximum surfel size (m)
 
     # Fusion settings
     fuser:
@@ -80,3 +80,8 @@ surfel_mapping_node:
       new_surfel_initial_radius: 0.1    # Initial radius for new surfels (m)
       center_update_rate: 0.3           # Center adaptation rate [0,1]
       normal_update_rate: 0.1           # Normal adaptation rate [0,1]
+      max_surfels_per_voxel: 6          # Maximum number of surfels per voxel
+
+    # Visualization
+    viz:
+      viz_color_mode: "normal"   # Select surfel coloring based on "confidence", "normal", or "point_count"

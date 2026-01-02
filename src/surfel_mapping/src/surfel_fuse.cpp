@@ -10,6 +10,7 @@ SurfelFusion::SurfelFusion(const Params& p, const SurfelMap::Params& map_p) : pa
 }
 
 /* PUBLIC */
+
 void SurfelFusion::process_scan(const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud, const pcl::PointCloud<pcl::Normal>::Ptr& normals, const Eigen::Isometry3f& pose, uint64_t timestamp) {
     if (cloud->size() != normals->size()) {
         std::cerr << "[SurfelFusion] Point/Normal size mismatch!" << std::endl;
@@ -48,6 +49,8 @@ void SurfelFusion::process_scan(const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud
 
         int best_idx = map_.find_best_association(point_world, normal_world);
 
+        // If good association found -> fuse it
+        // Else accumulate and process later
         if (best_idx >= 0) {
             fuse_point_to_surfel(static_cast<size_t>(best_idx), point_world, normal_world, timestamp);
             surfel_updated[best_idx] = true;
@@ -213,9 +216,23 @@ void SurfelFusion::process_accumulator(uint64_t timestamp) {
         normal_variance /= static_cast<float>(cell.point_indices.size());
         if (normal_variance > 0.3f) continue;
 
+        // check for existing surfel to merge with before creation
+        size_t merge_target = map_.find_merge_target(center, normal);
+        if (merge_target != INVALID_SURFEL_IDX) {
+            for (size_t idx : cell.point_indices) {
+                fuse_point_to_surfel(merge_target, point_accumulator_[idx].position, point_accumulator_[idx].normal, timestamp);
+            }
+        }
+        else {
+            size_t new_idx = map_.create_surfel(center, normal, params_.new_surfel_initial_radius, timestamp);
+            if (new_idx != INVALID_SURFEL_IDX) {
+                last_stats_.surfels_created++;
+            }
+        }
+
         // create new surfel from cluster centroid, avg cluster normal, some init radius
-        map_.create_surfel(center, normal, params_.new_surfel_initial_radius, timestamp);
-        last_stats_.surfels_created++;
+        // map_.create_surfel(center, normal, params_.new_surfel_initial_radius, timestamp);
+        // last_stats_.surfels_created++;
 
         // mark points in cluster for removal (removed from accumulator)
         for (size_t idx : cell.point_indices) {
@@ -229,6 +246,15 @@ void SurfelFusion::process_accumulator(uint64_t timestamp) {
     for (size_t idx : points_to_remove) {
         if (idx < point_accumulator_.size()) {
             point_accumulator_.erase(point_accumulator_.begin() + static_cast<long>(idx));
+        }
+    }
+
+    // periodic merge
+    static size_t merge_counter = 0;
+    if (++merge_counter % 5 == 0) {
+        size_t merged = map_.merge_similar_surfels();
+        if (merged > 0) {
+            last_stats_.surfels_merged = merged;
         }
     }
 }
