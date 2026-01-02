@@ -168,85 +168,52 @@ private:
 
     void project_to_grid_and_downsample(const pcl::PointCloud<pcl::PointXYZ>::Ptr& in) {
 
-        // Clear downsampled grid
         for (auto& cell : grid_ds_) {
             cell.valid = false;
             cell.range_sq = std::numeric_limits<float>::infinity();
         }
 
-        // full size grid (on stack)
-        std::vector<GridCell> temp_grid(W_full_ * H_full_); 
-        for (auto& cell : temp_grid) {
-            cell.valid = false;
-            cell.range_sq = std::numeric_limits<float>::infinity();
+        // parallelize here?
+        for (int vd = 0; vd < H_; ++vd) {
+            for (int ud = 0; ud < W_; ++ud) {
+                grid_ds_[idx(ud, vd)].valid = false;
+                grid_ds_[idx(ud, vd)].range_sq = std::numeric_limits<float>::infinity();
+            }
         }
 
+        // project to downsampled grid
         for (const auto& p : in->points) {
             if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z)) continue;
-
-            // range check 
-            const float r_sq = p.x*p.x + p.y*p.y + p.z*p.z;
+            
+            // Range check
+            const float r_sq = p.x * p.x + p.y * p.y + p.z * p.z;
             if (r_sq < min_range_sq_ || r_sq > max_range_sq_) continue;
 
-            // gnd check 
+            // Gnd point check
             if (params_.enable_gnd_filter && have_tf_) {
-                // const float z_world = gnd_normal_z_.x() * p.x + gnd_normal_z_.y() * p.y + gnd_normal_z_.z() * p.z + gnd_offset_z_;
                 const float z_world = gnd_normal_z_.dot(Eigen::Vector3f(p.x, p.y, p.z)) + gnd_offset_z_;
                 if (z_world < params_.gnd_z_min) continue;
             }
-
-            // angle check
-            const float yaw = std::atan2(p.y, p.x);
+ 
+            const float yaw = std::atan2(p.y, p.x); // atan(y / z)
             const float xy_dist = std::sqrt(p.x * p.x + p.y * p.y);
-            const float pitch = std::atan2(p.z, xy_dist);
-
+            const float pitch = std::atan2(p.z, xy_dist); // atan(z / sqrt(x² + y²))
             if (yaw < yaw_min_ || yaw > yaw_max_ || pitch < pitch_min_ || pitch > pitch_max_) continue;
 
-            // convert to pixel coordinates 
-            const int u = static_cast<int>((yaw - yaw_min_) * yaw_scale_ + 0.5f);
-            const int v = static_cast<int>((pitch - pitch_min_) * pitch_scale_ + 0.5f);
-            
-            if (u < 0 || u >= W_full_ || v < 0 || v >= H_full_) continue;
+            const int u = static_cast<int>((yaw - yaw_min_) * yaw_scale_ / ds_ + 0.5f);
+            const int v = static_cast<int>((pitch - pitch_min_) * pitch_scale_ / ds_ + 0.5f);
 
-            GridCell& cell = temp_grid[v * W_full_ + u];
-            if (r_sq < cell.range_sq) {
-                cell.point = p;
-                cell.range_sq = r_sq;
-                cell.valid = true;
-            }
-        }
+            if (u < 0 || u >= W_ || v < 0 || v >= H_) continue;
 
-        // Downsample the grid: take closest in each block
-        for (int vd = 0; vd < H_; ++vd) {
-            for (int ud = 0; ud < W_; ++ud) {
-                float best_r_sq = std::numeric_limits<float>::infinity();
-                pcl::PointXYZ best_p;
-                bool found = false;
+            GridCell& cell = grid_ds_[idx(u,v)];
 
-                const int v_start = vd * ds_;
-                const int u_start = ud * ds_;
-                const int v_end = std::min(v_start + ds_, H_full_);
-                const int u_end = std::min(u_start + ds_, W_full_);
-
-                for (int v = v_start; v < v_end; ++v) {
-                    for (int u = u_start; u < u_end; ++u) {
-                        const GridCell& cell = temp_grid[v * W_full_ + u];
-                        if (cell.valid && cell.range_sq < best_r_sq) {
-                            best_r_sq = cell.range_sq;
-                            best_p = cell.point;
-                            found = true;
-                        }
-                    }
-                }
-
-                GridCell& ds_cell = grid_ds_[idx(ud, vd)];
-                if (found) {
-                    ds_cell.point = best_p;
-                    ds_cell.range_sq = best_r_sq;
-                    ds_cell.valid = true;
-                }
-                else {
-                    ds_cell.valid = false;
+            // atomic update
+            // ensure thread safety here if parallelizing loop (#pragma omp critical)
+            {
+                if (r_sq < cell.range_sq) {
+                    cell.point = p;
+                    cell.range_sq = r_sq;
+                    cell.valid = true;
                 }
             }
         }

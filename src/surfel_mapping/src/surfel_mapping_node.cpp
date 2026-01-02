@@ -49,7 +49,7 @@ void SurfelMappingNode::declare_parameters() {
     this->declare_parameter("preprocess.height", 180);
     this->declare_parameter("preprocess.hfov_deg", 106.0);
     this->declare_parameter("preprocess.vfov_deg", 86.0);
-    this->declare_parameter("preprocess.ds_factor", 1);
+    this->declare_parameter("preprocess.ds_factor", 2);
     this->declare_parameter("preprocess.min_range", 0.1);
     this->declare_parameter("preprocess.max_range", 10.0);
     this->declare_parameter("preprocess.enable_gnd_filter", true);
@@ -102,7 +102,6 @@ void SurfelMappingNode::initialize_fuser() {
     fp.new_surfel_initial_radius = this->get_parameter("fuser.new_surfel_initial_radius").as_double();
     fp.center_update_rate = this->get_parameter("fuser.center_update_rate").as_double();
     fp.normal_update_rate = this->get_parameter("fuser.normal_update_rate").as_double();
-    fp.confidence_boost = this->get_parameter("fuser.confidence_boost").as_double();
     
     fuser_ = std::make_unique<SurfelFusion>(fp, mp);
 }
@@ -311,103 +310,4 @@ void SurfelMappingNode::publish_visualization() {
         stats.valid_surfels, stats.voxels_occupied, 
         stats.avg_confidence, stats.avg_point_count);    
 }
-
-// void SurfelMappingNode::publish_visualization() {
-//     // Show discs
-//     if (surfel_marker_pub_->get_subscription_count() == 0) return;
-
-//     const auto& surfels = fuser_->map().get_surfels();
-//     if (surfels.empty()) return;
-
-//     visualization_msgs::msg::MarkerArray markers;
-//     std::string world_frame = this->get_parameter("world_frame").as_string();
-//     auto now = this->get_clock()->now();
-    
-//     // Surfel discs
-//     visualization_msgs::msg::Marker disc_marker;
-//     disc_marker.header.frame_id = world_frame;
-//     disc_marker.header.stamp = now;
-//     disc_marker.ns = "surfel_discs";
-//     disc_marker.type = visualization_msgs::msg::Marker::CYLINDER;
-//     disc_marker.action = visualization_msgs::msg::Marker::ADD;
-    
-//     // Surfel normals
-//     visualization_msgs::msg::Marker normal_marker;
-//     normal_marker.header.frame_id = world_frame;
-//     normal_marker.header.stamp = now;
-//     normal_marker.ns = "surfel_normals";
-//     normal_marker.type = visualization_msgs::msg::Marker::LINE_LIST;
-//     normal_marker.action = visualization_msgs::msg::Marker::ADD;
-//     normal_marker.id = 0;
-//     normal_marker.scale.x = 0.005;  // Line width
-//     normal_marker.color.r = 0.0f;
-//     normal_marker.color.g = 0.0f;
-//     normal_marker.color.b = 1.0f;
-//     normal_marker.color.a = 0.8f;
-    
-//     int id = 0;
-//     for (const auto& surfel : surfels) {
-//         if (!surfel.is_valid) continue;
-        
-//         // Disc visualization
-//         disc_marker.id = id++;
-//         disc_marker.pose.position.x = surfel.center.x();
-//         disc_marker.pose.position.y = surfel.center.y();
-//         disc_marker.pose.position.z = surfel.center.z();
-        
-//         // Orientation: cylinder axis along Z, we want it along normal
-//         Eigen::Quaternionf q = Eigen::Quaternionf::FromTwoVectors(
-//             Eigen::Vector3f::UnitZ(), surfel.normal);
-//         disc_marker.pose.orientation.x = q.x();
-//         disc_marker.pose.orientation.y = q.y();
-//         disc_marker.pose.orientation.z = q.z();
-//         disc_marker.pose.orientation.w = q.w();
-        
-//         // Size based on eigenvalues
-//         float radius = surfel.get_radius();
-//         disc_marker.scale.x = radius * 2.0f;  // Diameter X
-//         disc_marker.scale.y = radius * 2.0f;  // Diameter Y
-//         disc_marker.scale.z = 0.01f;          // Thin disc
-        
-//         // Color based on confidence
-//         float conf = std::clamp(surfel.confidence, 0.0f, 1.0f);
-//         disc_marker.color.r = 1.0f - conf;
-//         disc_marker.color.g = conf;
-//         disc_marker.color.b = 0.2f;
-//         disc_marker.color.a = 0.6f;
-        
-//         markers.markers.push_back(disc_marker);
-        
-//         // Normal line
-//         geometry_msgs::msg::Point p1, p2;
-//         p1.x = surfel.center.x();
-//         p1.y = surfel.center.y();
-//         p1.z = surfel.center.z();
-        
-//         float normal_length = 0.1f;
-//         p2.x = surfel.center.x() + surfel.normal.x() * normal_length;
-//         p2.y = surfel.center.y() + surfel.normal.y() * normal_length;
-//         p2.z = surfel.center.z() + surfel.normal.z() * normal_length;
-        
-//         normal_marker.points.push_back(p1);
-//         normal_marker.points.push_back(p2);
-//     }
-    
-//     markers.markers.push_back(normal_marker);
-    
-//     // Delete old markers
-//     visualization_msgs::msg::Marker delete_marker;
-//     delete_marker.action = visualization_msgs::msg::Marker::DELETEALL;
-//     delete_marker.ns = "surfel_discs";
-    
-//     surfel_marker_pub_->publish(markers);
-    
-//     // Log map stats
-//     auto stats = fuser_->map().get_stats();
-//     RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
-//         "Map: %zu surfels, %zu voxels, avg conf: %.2f, avg pts: %.1f",
-//         stats.valid_surfels, stats.voxels_occupied, 
-//         stats.avg_confidence, stats.avg_point_count);    
-// }
-
 };

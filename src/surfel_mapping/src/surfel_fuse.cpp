@@ -2,8 +2,12 @@
 
 using namespace surface_inspection_planning;
 
-SurfelFusion::SurfelFusion() : params_(), frame_count_(0) {}
-SurfelFusion::SurfelFusion(const Params& p, const SurfelMap::Params& map_p) : params_(p), frame_count_(0), map_(map_p) {}
+SurfelFusion::SurfelFusion() : params_() {
+    frame_count_ = 0;
+}
+SurfelFusion::SurfelFusion(const Params& p, const SurfelMap::Params& map_p) : params_(p), map_(map_p) {
+    frame_count_ = 0;
+}
 
 /* PUBLIC */
 void SurfelFusion::process_scan(const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud, const pcl::PointCloud<pcl::Normal>::Ptr& normals, const Eigen::Isometry3f& pose, uint64_t timestamp) {
@@ -136,14 +140,6 @@ void SurfelFusion::fuse_point_to_surfel(size_t surfel_idx, const Eigen::Vector3f
 
     // Update confidence
     surfel.update_confidence(params_.confidence);
-
-    // update confidence (very naive - even bad fusion will increase confidence?)
-    // surfel.confidence = std::min(params_.max_confidence, surfel.confidence + params_.confidence_boost);
-
-    // timestamp and counters
-    // surfel.last_update_stamp = timestamp;
-    // surfel.observation_count++;
-
     map_.update_spatial_index(surfel_idx);
 }
 

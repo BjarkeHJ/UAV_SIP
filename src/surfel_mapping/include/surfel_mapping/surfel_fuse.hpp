@@ -30,7 +30,6 @@ public:
         float covariance_update_rate = 0.2f;
 
         // Confidence boost per observation
-        float confidence_boost = 0.05f;
         float max_confidence = 1.0f;
 
         // New surfel creation
