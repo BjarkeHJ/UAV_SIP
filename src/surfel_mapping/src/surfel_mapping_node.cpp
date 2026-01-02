@@ -133,7 +133,6 @@ void SurfelMappingNode::cloud_callback(const sensor_msgs::msg::PointCloud2::Shar
     preprocessor_->set_input_cloud(cloud_in);
     preprocessor_->downsample();
     preprocessor_->normal_estimation();
-    // preprocessor_->transform_output_to_world();
     auto pp_end = std::chrono::high_resolution_clock::now();
     double pp_time = std::chrono::duration<double, std::milli>(pp_end - pp_start).count();
     
@@ -144,20 +143,20 @@ void SurfelMappingNode::cloud_callback(const sensor_msgs::msg::PointCloud2::Shar
 
 
     if (cloud->empty() || normals->empty()) return;
-
+    
     uint64_t timestamp = rclcpp::Time(msg->header.stamp).nanoseconds();
     fuser_->process_scan(cloud, normals, pose, timestamp);
 
-    // RCLCPP_INFO(this->get_logger(),
-    //     "Preprocess Time: %.f ms", pp_time
-    // );
+    RCLCPP_INFO(this->get_logger(),
+        "Preprocess Time: %.f ms", pp_time
+    );
 
     const auto& stats = fuser_->last_stats();
-    // RCLCPP_INFO(this->get_logger(),
-    //     "Fusion: %zu pts, %zu assoc, %zu new surfels, %.f ms",
-    //     stats.points_processed, stats.points_associated,
-    //     stats.surfels_created, stats.processing_time_ms
-    // );
+    RCLCPP_INFO(this->get_logger(),
+        "Fusion: %zu pts, %zu assoc, %zu new surfels, %.f ms",
+        stats.points_processed, stats.points_associated,
+        stats.surfels_created, stats.processing_time_ms
+    );
 
     if (processed_cloud_pub_->get_subscription_count() > 0) {
         sensor_msgs::msg::PointCloud2 out_msg;

@@ -52,6 +52,7 @@ add_executable(
   src/surfel_mapping_node.cpp
   src/surfel_fuse.cpp
   src/surfel_map.cpp
+  src/surface_graph.cpp
 )
 
 ament_target_dependencies(
