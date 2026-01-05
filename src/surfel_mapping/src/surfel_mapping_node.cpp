@@ -70,6 +70,7 @@ void SurfelMappingNode::declare_parameters() {
     this->declare_parameter("fuser.new_surfel_initial_radius", 0.1);
     this->declare_parameter("fuser.center_update_rate", 0.3);
     this->declare_parameter("fuser.normal_update_rate", 0.1);
+    this->declare_parameter("fuser.covariance_update_rate", 0.2);
 
     // Visualization
     this->declare_parameter("viz.viz_color_mode", "normal");
@@ -106,6 +107,7 @@ void SurfelMappingNode::initialize_fuser() {
     fp.new_surfel_initial_radius = this->get_parameter("fuser.new_surfel_initial_radius").as_double();
     fp.center_update_rate = this->get_parameter("fuser.center_update_rate").as_double();
     fp.normal_update_rate = this->get_parameter("fuser.normal_update_rate").as_double();
+    fp.covariance_update_rate = this->get_parameter("fuser.covariance_update_rate").as_double();
 
     fuser_ = std::make_unique<SurfelFusion>(fp, mp);
 }
@@ -232,7 +234,8 @@ void SurfelMappingNode::publish_visualization() {
     
     int id = 0;
     for (const auto& surfel : surfels) {
-        if (!surfel.is_valid) continue;
+        // if (!surfel.is_valid) continue;
+        if (!surfel.is_mature) continue;
         
         ellipse_marker.id = id++;
         ellipse_marker.pose.position.x = surfel.center.x();

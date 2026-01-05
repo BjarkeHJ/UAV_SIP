@@ -67,14 +67,10 @@ struct ConnectivityParams {
     
     float min_normal_dot = 0.5; // 60 deg
     float max_plane_step = 0.1f;
-
     float alignment_threshold = 0.7f;
 
-    float min_node_confidence = 0.1f;
-    float min_node_radius = 0.03f;
-
+    float min_node_confidence = 0.8f;
     size_t min_node_observations = 3;
-
     size_t max_neighbors_per_node = 12;
 };
 
@@ -98,7 +94,7 @@ struct GraphUpdateStats {
     size_t nodes_updated = 0;
     size_t nodes_removed = 0;
     size_t edges_added = 0;
-    size_t edges = removed = 0;
+    size_t edges_removed = 0;
     double update_time_ms = 0.0;
 };
 

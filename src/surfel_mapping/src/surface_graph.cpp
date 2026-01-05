@@ -149,7 +149,7 @@ GraphUpdateStats SurfaceGraph::update_from_map(const SurfelMap& map) {
                 }
                 else {
                     update_node_properties(map, node_idx);
-                    stats.nodes_updated;
+                    stats.nodes_updated++;
                 }
             }
         }
@@ -176,9 +176,9 @@ GraphUpdateStats SurfaceGraph::update_from_map(const SurfelMap& map) {
 }
 
 bool SurfaceGraph::surfel_qualifies_as_node(const Surfel& surfel) const {
-    if (!surfel.is_valid) return false;
+    // if (!surfel.is_valid) return false;
+    if (!surfel.is_mature) return false;
     if (surfel.confidence < params_.min_node_confidence) return false;
-    if (surfel.get_radius() < params_.min_node_radius) return false;
     if (surfel.observation_count < params_.min_node_observations) return false;
     return true;
 }
@@ -237,7 +237,7 @@ void SurfaceGraph::update_node_properties(const SurfelMap& map, size_t node_idx)
     node.last_surfel_stamp = surfel.last_update_stamp;
 
     VoxelKey new_voxel = point_to_voxel(node.center);
-    if (new_voxel.x != old_voxel.x || new_voxel.y != old_voxel.y || new_voxel.z != new_voxel.z) {
+    if (new_voxel.x != old_voxel.x || new_voxel.y != old_voxel.y || new_voxel.z != old_voxel.z) {
         remove_node_from_spatial_index(node_idx);
         add_node_to_spatial_index(node_idx);
     }
@@ -470,7 +470,136 @@ void SurfaceGraph::compute_edge_cost(GraphEdge& edge) const {
 }
 
 void SurfaceGraph::set_weights(const EdgeCostWeights& w) {
+    weights_ = w;
+    for (auto& edge : edges_) {
+        if (edge.is_valid) {
+            compute_edge_cost(edge);
+        }
+    }
+}
+
+VoxelKey SurfaceGraph::point_to_voxel(const Eigen::Vector3f& p) const {
+    float inv_size = 1.0f / voxel_size_;
+    return VoxelKey{
+        static_cast<int32_t>(std::floor(p.x() * inv_size)),
+        static_cast<int32_t>(std::floor(p.y() * inv_size)),
+        static_cast<int32_t>(std::floor(p.z() * inv_size))
+    };
+}
+
+void SurfaceGraph::add_node_to_spatial_index(size_t node_idx) {
+    if (node_idx >= nodes_.size() || !nodes_[node_idx].is_valid) return;
+
+    auto key = point_to_voxel(nodes_[node_idx].center);
+    node_voxel_index_[key].push_back(node_idx);
+}
+
+void SurfaceGraph::remove_node_from_spatial_index(size_t node_idx) {
+    if (node_idx >= nodes_.size()) return;
+
+    auto key = point_to_voxel(nodes_[node_idx].center);
+    auto it = node_voxel_index_.find(key);
+
+    if (it != node_voxel_index_.end()) {
+        auto& indices = it->second;
+        indices.erase(std::remove(indices.begin(), indices.end(), node_idx), indices.end());
+        if (indices.empty()) {
+            node_voxel_index_.erase(it);
+        }
+    }
+}
+
+size_t SurfaceGraph::find_nearest_node(const Eigen::Vector3f& point) const {
+    if (nodes_.empty()) return 0;
+    auto center_key = point_to_voxel(point);
+    float best_dist_sq = std::numeric_limits<float>::max();
+    size_t best_idx = 0;
+
+    // searhc in growing voxel "circle" (NN)
+    for (int r = 0; r <= 5; ++r) {
+        for (int dx = -r; dx <= r; ++dx) {
+            for (int dy = -r; dy <= r; ++dy) {
+                for (int dz = -r; dz <= r; ++dz) {
+                    if (std::abs(dx) != r && std::abs(dy) != r && std::abs(dz) != r) continue;
+
+                    VoxelKey key{center_key.x + dx, center_key.y + dy, center_key.z + dz};
+                    auto it = node_voxel_index_.find(key);
+                    if (it == node_voxel_index_.end()) continue;
+
+                    for (size_t idx : it->second) {
+                        if (!nodes_[idx].is_valid) continue;
+                        float dist_sq = (nodes_[idx].center - point).squaredNorm();
+                        if (dist_sq < best_dist_sq) {
+                            best_dist_sq = dist_sq;
+                            best_idx = idx;
+                        }
+                    }
+                }
+            }
+        }
+
+        // found
+        if (best_dist_sq < std::numeric_limits<float>::max()) {
+            break;
+        }
+    }
+
+    return best_idx;
+}
+
+std::vector<size_t> SurfaceGraph::find_nodes_in_radius(const Eigen::Vector3f& point, float radius) const {
+    std::vector<size_t> result;
+
+    auto center_key = point_to_voxel(point);
+    int search_radius = static_cast<int>(std::ceil(radius / voxel_size_)) + 1;
+    float radius_sq = radius * radius;
+
+    for (int dx = -search_radius; dx <= search_radius; ++dx) {
+        for (int dy = -search_radius; dy <= search_radius; ++dy) {
+            for (int dz = -search_radius; dz <= search_radius; ++dz) {
+                VoxelKey key{center_key.x + dx, center_key.y + dy, center_key.z + dz};
+                auto it = node_voxel_index_.find(key);
+                if (it == node_voxel_index_.end()) continue;
+
+                for (size_t idx : it->second) {
+                    if (!nodes_[idx].is_valid) continue;
+                    if ((nodes_[idx].center - point).squaredNorm() <= radius_sq) {
+                        result.push_back(idx);
+                    }
+                }
+            }
+        }
+    }
     
+    return result;
+}
+
+std::optional<size_t> SurfaceGraph::find_node_by_surfel(size_t surfel_idx) const {
+    auto it = surfel_to_node_.find(surfel_idx);
+    if (it != surfel_to_node_.end() && nodes_[it->second].is_valid) {
+        return it->second;
+    }
+
+    return std::nullopt;
+}
+
+std::vector<size_t> SurfaceGraph::get_neighbors(size_t node_idx) const {
+    std::vector<size_t> neighbors;
+    if (node_idx >= nodes_.size() || !nodes_[node_idx].is_valid) {
+        return neighbors;
+    }
+
+    for (size_t edge_idx : nodes_[node_idx].edge_indices) {
+        if (edge_idx >= edges_.size() || !edges_[edge_idx].is_valid) continue;
+
+        const GraphEdge& edge = edges_[edge_idx];
+        size_t neighbor = (edge.from_node == node_idx) ? edge.to_node : edge.from_node;
+        if (nodes_[neighbor].is_valid) {
+            neighbors.push_back(neighbor);
+        }
+    }
+
+    return neighbors;
 }
 
 
