@@ -281,8 +281,197 @@ Eigen::Vector3f SurfaceGraph::compute_major_axis_3d(const Surfel& surfel) const 
     return major_3d.normalized();
 }
 
-// NEXT UP: create_edges_for_node... (in claude file)
+void SurfaceGraph::create_edges_for_node(size_t node_idx) {
+    if (node_idx >= nodes_.size() || !nodes_[node_idx].is_valid) return;
 
+    const GraphNode& node = nodes_[node_idx];
+
+    // candidates within max edge distance
+    std::vector<size_t> candidates = find_nodes_in_radius(node.center, params_.max_edge_distance);
+    std::vector<std::pair<size_t, float>> scored;
+
+    for (size_t other_idx : candidates) {
+        if (other_idx == node_idx) continue;
+        if (!nodes_[other_idx].is_valid) continue;
+
+        bool exists = false;
+        for (size_t edge_idx : nodes_[node_idx].edge_indices) {
+            if (!edges_[edge_idx].is_valid) continue;
+            if (edges_[edge_idx].from_node == other_idx || edges_[edge_idx].to_node == other_idx) {
+                exists = true;
+                break;
+            }
+        }
+
+        if (exists) continue;
+
+        auto edge_opt = try_create_edge(node_idx, other_idx);
+        if (edge_opt.has_value()) {
+            scored.emplace_back(other_idx, edge_opt->total_cost);
+        }
+    }
+
+    // sort by best scoring edge candidates
+    std::sort(scored.begin(), scored.end(), [](const auto& a, const auto& b) { return a.second < b.second; });
+    size_t current_neighbors = nodes_[node_idx].edge_indices.size();
+    size_t max_new = (params_.max_neighbors_per_node > current_neighbors) ? (params_.max_neighbors_per_node - current_neighbors) : 0;
+    size_t num_to_add = std::min(scored.size(), max_new);
+
+    // add eges 
+    for (size_t k = 0; k < num_to_add; ++k) {
+        size_t other_idx = scored[k].first;
+
+        // nb limit of other node
+        if (nodes_[other_idx].edge_indices.size() >= params_.max_neighbors_per_node) continue;
+
+        // return optional Edge
+        auto edge_opt = try_create_edge(node_idx, other_idx);
+        if (!edge_opt.has_value()) continue;
+
+        GraphEdge edge = edge_opt.value();
+        size_t edge_idx;
+        if (!free_edge_slots_.empty()) {
+            edge_idx = free_edge_slots_.back();
+            free_edge_slots_.pop_back();
+            edges_[edge_idx] = edge;
+        }
+        else {
+            edge_idx = edges_.size();
+            edges_.push_back(edge);
+        }
+
+        nodes_[node_idx].edge_indices.push_back(edge_idx);
+        nodes_[other_idx].edge_indices.push_back(edge_idx);
+        valid_edge_count_++;
+    }
+}
+
+void SurfaceGraph::remove_edges_for_node(size_t node_idx) {
+    if (node_idx >= nodes_.size()) return;
+
+    GraphNode& node = nodes_[node_idx];
+
+    for (size_t edge_idx : node.edge_indices) {
+        if (edge_idx >= edges_.size()) continue;
+
+        GraphEdge& edge = edges_[edge_idx];
+        if (!edge.is_valid) continue;
+
+        // remove from other node's edge list
+        size_t other_idx = (edge.from_node == node_idx) ? edge.to_node : edge.from_node;
+        if (other_idx < nodes_.size()) {
+            auto& other_edges = nodes_[other_idx].edge_indices;
+            other_edges.erase(
+                std::remove(other_edges.begin(), other_edges.end(), edge_idx),
+                other_edges.end()
+            );
+        }
+
+        edge.is_valid = false;
+        free_edge_slots_.push_back(edge_idx);
+        valid_edge_count_--;
+    }
+
+    node.edge_indices.clear();
+}
+
+void SurfaceGraph::update_edges_for_node(size_t node_idx) {
+    // do better update instead of remove + create...
+    remove_edges_for_node(node_idx);
+    create_edges_for_node(node_idx);
+}
+
+bool SurfaceGraph::check_connectivity(const GraphNode& n1, const GraphNode& n2) const {
+    // distance
+    float dist = (n1.center - n2.center).norm();
+    if (dist < params_.min_edge_distance || dist > params_.max_edge_distance) return false;
+
+    // normal dot
+    float normal_dot = std::abs(n1.normal.dot(n2.normal));
+    if (normal_dot < params_.min_normal_dot) return false;
+
+    // plane step
+    Eigen::Vector3f delta = n2.center - n1.center;
+    float step1 = std::abs(delta.dot(n1.normal));
+    float step2 = std::abs(delta.dot(n2.normal));
+    if (step1 > params_.max_plane_step || step2 > params_.max_plane_step) return false;
+    
+    return true;
+}
+
+std::optional<GraphEdge> SurfaceGraph::try_create_edge(size_t from_node, size_t to_node) {
+    if (from_node >= nodes_.size() || to_node >= nodes_.size()) {
+        return std::nullopt;
+    }
+
+    const GraphNode& n1 = nodes_[from_node];
+    const GraphNode& n2 = nodes_[to_node];
+
+    if (!n1.is_valid || !n2.is_valid) {
+        return std::nullopt;
+    }
+
+    if (!check_connectivity(n1, n2)) {
+        return std::nullopt;
+    }
+
+    GraphEdge edge;
+    edge.from_node = from_node;
+    edge.to_node = to_node;
+    edge.is_valid = true;
+
+    Eigen::Vector3f edge_vec = n2.center - n1.center;
+    edge.distance = edge_vec.norm();
+    edge.normal_change = 1.0f - std::abs(n1.normal.dot(n2.normal));
+
+    Eigen::Vector3f edge_dir = edge_vec.normalized();
+    edge.alignment_cost = compute_alignment_cost(n1, n2, edge_dir);
+
+    float step1 = std::abs(edge_vec.dot(n1.normal));
+    float step2 = std::abs(edge_vec.dot(n2.normal));
+    edge.step_height = std::max(step1, step2);
+
+    // check structural alignment based on node surfel major axis (here )
+    float align1 = std::abs(edge_dir.dot(n1.major_axis));
+    float align2 = std::abs(edge_dir.dot(n2.major_axis));
+    edge.is_structural = (n1.anisotropy > 0.5f && align1 > params_.alignment_threshold) || (n2.anisotropy > 0.5f && align2 > params_.alignment_threshold);
+
+    compute_edge_cost(edge);
+
+    return edge;
+}
+
+float SurfaceGraph::compute_alignment_cost(const GraphNode& from, const GraphNode& to, const Eigen::Vector3f& edge_dir) const {
+    float cost = 0.0f;
+
+    if (from.anisotropy > 0.3f) {
+        float align = std::abs(edge_dir.dot(from.major_axis));
+        cost += (1.0f - align) * from.anisotropy;
+    }
+
+    if (to.anisotropy) {
+        float align = std::abs(edge_dir.dot(to.major_axis));
+        cost += (1.0f - align) * to.anisotropy;
+    }
+
+    return cost * 0.5f;
+}
+
+void SurfaceGraph::compute_edge_cost(GraphEdge& edge) const {
+    edge.total_cost = weights_.w_distance * edge.distance + 
+                      weights_.w_normal_change * edge.normal_change + 
+                      weights_.w_alignment * edge.alignment_cost + 
+                      weights_.w_step * edge.step_height;
+
+    if (edge.is_structural) {
+        edge.total_cost -= weights_.structural_bonus;
+        edge.total_cost = std::max(0.01f, edge.total_cost);
+    }
+}
+
+void SurfaceGraph::set_weights(const EdgeCostWeights& w) {
+    
+}
 
 
 

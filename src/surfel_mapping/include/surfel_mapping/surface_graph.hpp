@@ -185,9 +185,7 @@ private:
     uint64_t last_update_frame_ = 0;
 };
 
-
-
-};
+}; // end namespace
 
 
 #endif
