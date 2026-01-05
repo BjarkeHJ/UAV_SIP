@@ -81,8 +81,8 @@ void SurfelFusion::process_scan(const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud
 
     if (params_.enable_graph) {
         maybe_update_graph();
+        if (graph_) std::cout << "GRAPH SIZE: " << graph_->num_nodes() << std::endl; 
     }
-    // std::cout << "GRAPH SIZE: " << graph_->num_nodes() << std::endl; 
 
     auto end_time = std::chrono::high_resolution_clock::now();
     last_stats_.processing_time_ms = std::chrono::duration<double, std::milli>(end_time - start_time).count();
