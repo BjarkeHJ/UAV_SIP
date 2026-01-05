@@ -2,21 +2,20 @@
 
 using namespace surface_inspection_planning;
 
-SurfelFusion::SurfelFusion() : params_(), map_(), graph_() {
+SurfelFusion::SurfelFusion() : params_(), map_(), graph_params_(), graph_(nullptr) {
     frame_count_ = 0;
     last_graph_update_frame_ = 0;
 }
-SurfelFusion::SurfelFusion(const Params& p, const SurfelMap::Params& map_p) : params_(p), map_(map_p), graph_() {
+SurfelFusion::SurfelFusion(const Params& p, const SurfelMap::Params& map_p) : params_(p), map_(map_p), graph_params_(), graph_(nullptr) {
     frame_count_ = 0;
     last_graph_update_frame_ = 0;
 }
-SurfelFusion::SurfelFusion(const Params& p, const SurfelMap::Params& map_p, const ConnectivityParams& graph_p) : params_(p), map_(map_p), graph_(graph_p) {
+SurfelFusion::SurfelFusion(const Params& p, const SurfelMap::Params& map_p, const GraphParams& graph_p) : params_(p), map_(map_p), graph_params_(graph_p), graph_(nullptr) {
     frame_count_ = 0;
     last_graph_update_frame_ = 0;
 }
 
 /* PUBLIC */
-
 void SurfelFusion::process_scan(const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud, const pcl::PointCloud<pcl::Normal>::Ptr& normals, const Eigen::Isometry3f& pose, uint64_t timestamp) {
     if (cloud->size() != normals->size()) {
         std::cerr << "[SurfelFusion] Point/Normal size mismatch!" << std::endl;
@@ -58,8 +57,11 @@ void SurfelFusion::process_scan(const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud
         // If good association found -> fuse it
         // Else accumulate and process later
         if (best_idx >= 0) {
-            fuse_point_to_surfel(static_cast<size_t>(best_idx), point_world, normal_world, timestamp);
-            surfel_updated[best_idx] = true;
+            size_t idx = static_cast<size_t>(best_idx);
+            fuse_point_to_surfel(best_idx, point_world, normal_world, timestamp);
+            if (idx < surfel_updated.size()) {
+                surfel_updated[best_idx] = true;
+            }
             last_stats_.points_associated++;
         }
         else {
@@ -77,17 +79,18 @@ void SurfelFusion::process_scan(const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud
         process_accumulator(timestamp);
     }
 
-    // if (params_.enable_graph) {
-    //     maybe_update_graph();
-    // }
-    // std::cout << "GRAPH SIZE: " << graph_.num_nodes() << std::endl; 
+    if (params_.enable_graph) {
+        maybe_update_graph();
+    }
+    // std::cout << "GRAPH SIZE: " << graph_->num_nodes() << std::endl; 
 
     auto end_time = std::chrono::high_resolution_clock::now();
     last_stats_.processing_time_ms = std::chrono::duration<double, std::milli>(end_time - start_time).count();
 
-
-    last_stats_.graph_nodes = graph_.num_nodes();
-    last_stats_.graph_edges = graph_.num_edges();
+    if (graph_) {
+        last_stats_.graph_nodes = graph_->num_nodes();
+        last_stats_.graph_edges = graph_->num_edges();
+    }
 }
 
 void SurfelFusion::flush_accumulator(uint64_t timestamp) {
@@ -97,7 +100,7 @@ void SurfelFusion::flush_accumulator(uint64_t timestamp) {
 
 void SurfelFusion::reset() {
     map_.clear();
-    graph_.clear();
+    if (graph_) graph_->clear();
     point_accumulator_.clear();
     pending_changes_.clear();
     frame_count_ = 0;
@@ -205,6 +208,7 @@ void SurfelFusion::process_accumulator(uint64_t timestamp) {
 
     // create surfels from valid clusters
     std::vector<size_t> points_to_remove;
+
     for (auto& [hash, cell] : clusters) {
         if (cell.point_indices.size() < params_.min_points_for_new_surfel) continue;
 
@@ -219,7 +223,6 @@ void SurfelFusion::process_accumulator(uint64_t timestamp) {
             float d_sq = (point_accumulator_[idx].position - center).squaredNorm();
             max_dist_sq = std::max(max_dist_sq, d_sq);
         }
-
         if (max_dist_sq > coherence_thresh_sq) continue;
 
         // normal consistency
@@ -233,6 +236,7 @@ void SurfelFusion::process_accumulator(uint64_t timestamp) {
 
         // check for existing surfel to merge with before creation
         size_t merge_target = map_.find_merge_target(center, normal);
+        
         if (merge_target != INVALID_SURFEL_IDX) {
             for (size_t idx : cell.point_indices) {
                 fuse_point_to_surfel(merge_target, point_accumulator_[idx].position, point_accumulator_[idx].normal, timestamp);
@@ -271,6 +275,12 @@ void SurfelFusion::process_accumulator(uint64_t timestamp) {
     }
 }
 
+void SurfelFusion::ensure_graph_exists() {
+    if (!graph_) {
+        graph_ = std::make_unique<SurfaceGraph>(map_, graph_params_);
+    }
+}
+
 void SurfelFusion::maybe_update_graph() {
     if (frame_count_ - last_graph_update_frame_ < params_.graph_update_interval) {
         return;
@@ -279,6 +289,8 @@ void SurfelFusion::maybe_update_graph() {
 }
 
 GraphUpdateStats SurfelFusion::update_graph_now() {
+    ensure_graph_exists();
+
     auto start_time = std::chrono::high_resolution_clock::now();
    
     GraphUpdateStats stats;
@@ -288,13 +300,15 @@ GraphUpdateStats SurfelFusion::update_graph_now() {
         std::vector<size_t> updated_vec(pending_changes_.updated_surfels.begin(), pending_changes_.updated_surfels.end());
         std::vector<size_t> removed_vec(pending_changes_.removed_surfels.begin(), pending_changes_.removed_surfels.end());
     
-        stats = graph_.update_incremental(map_, new_vec, updated_vec, removed_vec);
+        stats = graph_->update_incremental(new_vec, updated_vec, removed_vec);
         pending_changes_.clear();
     }
-    else {
-        // no tracked changes
-        stats = graph_.update_from_map(map_);
+    else if (graph_->empty() && !map_.empty()) {
+        graph_->rebuild();
+        stats.nodes_added = graph_->num_nodes();
+        stats.edges_created = graph_->num_edges();
     }
+
 
     last_graph_update_frame_ = frame_count_;
 
@@ -305,7 +319,9 @@ GraphUpdateStats SurfelFusion::update_graph_now() {
 }
 
 void SurfelFusion::rebuild_graph() {
-    graph_.build_from_map(map_);pending_changes_.clear();
+    ensure_graph_exists();
+    graph_->rebuild();
+    pending_changes_.clear();
     last_graph_update_frame_ = frame_count_;
 }
 

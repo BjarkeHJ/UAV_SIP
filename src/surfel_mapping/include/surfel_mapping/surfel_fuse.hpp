@@ -7,6 +7,7 @@
 #include <vector>
 #include <deque>
 #include <unordered_set>
+#include <memory>
 #include <chrono>
 
 #include "surfel_mapping/surfel_map.hpp"
@@ -60,7 +61,7 @@ public:
         size_t graph_nodes = 0;
         size_t graph_edges = 0;
         double processing_time_ms = 0.0;
-        double graph_update_time_ms = 0.0;
+        double graph_update_tims_ms = 0.0;
     };
 
     struct ChangeSet {
@@ -81,18 +82,34 @@ public:
 
     SurfelFusion();
     explicit SurfelFusion(const Params& p, const SurfelMap::Params& map_p);
-    explicit SurfelFusion(const Params& p, const SurfelMap::Params& map_p, const ConnectivityParams& graph_p);
+    SurfelFusion(const Params& p, const SurfelMap::Params& map_p, const GraphParams& graph_p);
+    
     const Params& params() const { return params_; }
     void set_params(const Params& p) {params_ = p; }
 
+    // Map
     const SurfelMap& map() const { return map_; }
+    SurfelMap& map_mutable() { return map_; }
+
+    // Graph
+    bool has_graph() const { return graph_ != nullptr; }
+    const SurfaceGraph& graph() const { return *graph_; }
+    SurfaceGraph& graph_mutable() { return *graph_; }
+
+    // Stats
     const FusionStats& last_stats() const { return last_stats_; }
     const ChangeSet& last_changes() const { return pending_changes_; }
 
-    void process_scan(const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud, const pcl::PointCloud<pcl::Normal>::Ptr& normals, const Eigen::Isometry3f& pose, uint64_t timestamp = 0);
+    void process_scan(
+        const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud, 
+        const pcl::PointCloud<pcl::Normal>::Ptr& normals, 
+        const Eigen::Isometry3f& pose, uint64_t 
+        timestamp = 0
+    );
     
     // Update graph incremental using pending changes
     GraphUpdateStats update_graph_now();
+
     // full rebuild
     void rebuild_graph();
 
@@ -114,18 +131,21 @@ private:
     void record_surfel_updated(size_t surfel_idx);
     void record_surfel_removed(size_t surfel_idx);
 
+    void ensure_graph_exists();
     void maybe_update_graph();
 
     Params params_;
     SurfelMap map_;
-    SurfaceGraph graph_;
+    
+    GraphParams graph_params_;
+    std::unique_ptr<SurfaceGraph> graph_;
+
     std::deque<AccumulatedPoint> point_accumulator_;
     uint64_t frame_count_;
     uint64_t last_graph_update_frame_ = 0;
 
     FusionStats last_stats_;
     ChangeSet pending_changes_;
-
 };
 
 }; // end namespace
