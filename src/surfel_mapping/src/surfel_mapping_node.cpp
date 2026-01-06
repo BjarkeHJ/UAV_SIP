@@ -1,6 +1,6 @@
 #include "surfel_mapping/surfel_mapping_node.hpp"
 
-namespace surface_inspection_planning {
+using namespace surface_inspection_planning;
 
 SurfelMappingNode::SurfelMappingNode() : Node("surfel_mapping_node") {
     // declare parameters
@@ -187,22 +187,55 @@ bool SurfelMappingNode::get_sensor_pose(const rclcpp::Time& stamp, Eigen::Isomet
 }
 
 void SurfelMappingNode::publish_visualization() {
-    if (surfel_marker_pub_->get_subscription_count() == 0) return;
+    std::string world_frame = this->get_parameter("world_frame").as_string();
+    
+    // Publish surfel markers
+    if (this->get_parameter("viz.show_surfels").as_bool() && 
+        surfel_marker_pub_->get_subscription_count() > 0) {
+        visualization_msgs::msg::MarkerArray surfel_markers;
+        publish_surfel_markers(surfel_markers);
+        surfel_marker_pub_->publish(surfel_markers);
+    }
+    
+    // Publish graph markers
+    if (this->get_parameter("viz.show_graph").as_bool() && 
+        graph_marker_pub_->get_subscription_count() > 0 &&
+        fuser_->has_graph()) {
+        visualization_msgs::msg::MarkerArray graph_markers;
+        publish_graph_markers(graph_markers);
+        graph_marker_pub_->publish(graph_markers);
+    }
+    
+    // Log stats
+    auto map_stats = fuser_->map().get_stats();
+    RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
+        "Map: %zu surfels, %zu voxels, avg_r: %.3fm, avg conf: %.2f",
+        map_stats.valid_surfels, map_stats.voxels_occupied, 
+        map_stats.avg_radius, map_stats.avg_confidence);
+    
+    if (fuser_->has_graph()) {
+        auto cov_stats = fuser_->graph().get_coverage_stats();
+        RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
+            "Graph: %zu nodes, coverage: %.1f%%, area: %.2f m²",
+            cov_stats.total_nodes, cov_stats.coverage_ratio * 100.0f,
+            cov_stats.total_surface_area);
+    }
+}
 
+void SurfelMappingNode::publish_surfel_markers(visualization_msgs::msg::MarkerArray& markers) {
     const auto& surfels = fuser_->map().get_surfels();
     if (surfels.empty()) return;
 
-    visualization_msgs::msg::MarkerArray markers;
     std::string world_frame = this->get_parameter("world_frame").as_string();
     auto now = this->get_clock()->now();
     
-    // Get color mode from parameter
-    std::string color_mode_str = this->get_parameter("viz.viz_color_mode").as_string();
+    // Get color mode
+    std::string color_mode_str = this->get_parameter("viz.surfel_color_mode").as_string();
     SurfelColorMode color_mode = SurfelColorMode::CONFIDENCE;
     if (color_mode_str == "normal") color_mode = SurfelColorMode::NORMAL_DIRECTION;
     else if (color_mode_str == "point_count") color_mode = SurfelColorMode::POINT_COUNT;
     
-    // Delete old markers first
+    // Delete old markers
     visualization_msgs::msg::Marker delete_marker;
     delete_marker.header.frame_id = world_frame;
     delete_marker.header.stamp = now;
@@ -234,15 +267,15 @@ void SurfelMappingNode::publish_visualization() {
     
     int id = 0;
     for (const auto& surfel : surfels) {
-        // if (!surfel.is_valid) continue;
+        // Only mature surfels
         if (!surfel.is_mature) continue;
-        
+
         ellipse_marker.id = id++;
         ellipse_marker.pose.position.x = surfel.center.x();
         ellipse_marker.pose.position.y = surfel.center.y();
         ellipse_marker.pose.position.z = surfel.center.z();
         
-        // Compute orientation
+        // Compute orientation from eigenvectors
         float sigma1 = std::sqrt(std::max(surfel.eigenvalues(0), 1e-6f));
         float sigma2 = std::sqrt(std::max(surfel.eigenvalues(1), 1e-6f));
         
@@ -271,16 +304,13 @@ void SurfelMappingNode::publish_visualization() {
         ellipse_marker.pose.orientation.z = q.z();
         ellipse_marker.pose.orientation.w = q.w();
         
-        const float sigma_scale = 1.0f;
-        ellipse_marker.scale.x = sigma1 * 2.0f * sigma_scale;
-        ellipse_marker.scale.y = sigma2 * 2.0f * sigma_scale;
+        ellipse_marker.scale.x = sigma1 * 2.0f;
+        ellipse_marker.scale.y = sigma2 * 2.0f;
         ellipse_marker.scale.z = 0.005f;
         
-        // === COLOR BASED ON MODE ===
+        // Color based on mode
         switch (color_mode) {
             case SurfelColorMode::NORMAL_DIRECTION: {
-                // Map normal to RGB (like a normal map)
-                // normal components are in [-1, 1], map to [0, 1]
                 ellipse_marker.color.r = (surfel.normal.x() + 1.0f) * 0.5f;
                 ellipse_marker.color.g = (surfel.normal.y() + 1.0f) * 0.5f;
                 ellipse_marker.color.b = (surfel.normal.z() + 1.0f) * 0.5f;
@@ -288,7 +318,6 @@ void SurfelMappingNode::publish_visualization() {
                 break;
             }
             case SurfelColorMode::POINT_COUNT: {
-                // Color by observation count (blue→green→yellow→red)
                 float normalized = std::min(1.0f, static_cast<float>(surfel.point_count) / 200.0f);
                 if (normalized < 0.5f) {
                     ellipse_marker.color.r = 0.0f;
@@ -331,13 +360,254 @@ void SurfelMappingNode::publish_visualization() {
     }
     
     markers.markers.push_back(normal_marker);
-    surfel_marker_pub_->publish(markers);
-    
-    auto stats = fuser_->map().get_stats();
-    RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
-        "Map: %zu surfels, %zu voxels, avg_r: %.3fm, avg conf: %.2f",
-        stats.valid_surfels, stats.voxels_occupied, 
-        stats.avg_radius, stats.avg_confidence);
 }
 
-};
+void SurfelMappingNode::publish_graph_markers(visualization_msgs::msg::MarkerArray& markers) {
+    if (!fuser_->has_graph()) return;
+    
+    const SurfaceGraph& graph = fuser_->graph();
+    if (graph.empty()) return;
+    
+    std::string world_frame = this->get_parameter("world_frame").as_string();
+    auto now = this->get_clock()->now();
+    
+    // Get visualization parameters
+    std::string node_color_str = this->get_parameter("viz.graph_node_color_mode").as_string();
+    std::string edge_color_str = this->get_parameter("viz.graph_edge_color_mode").as_string();
+    float node_size = this->get_parameter("viz.graph_node_size").as_double();
+    float edge_width = this->get_parameter("viz.graph_edge_width").as_double();
+    
+    GraphNodeColorMode node_color_mode = GraphNodeColorMode::IMPORTANCE;
+    if (node_color_str == "inspection") node_color_mode = GraphNodeColorMode::INSPECTION_STATE;
+    else if (node_color_str == "confidence") node_color_mode = GraphNodeColorMode::CONFIDENCE;
+    else if (node_color_str == "degree") node_color_mode = GraphNodeColorMode::DEGREE;
+    
+    GraphEdgeColorMode edge_color_mode = GraphEdgeColorMode::STRUCTURAL;
+    if (edge_color_str == "cost") edge_color_mode = GraphEdgeColorMode::COST;
+    else if (edge_color_str == "uniform") edge_color_mode = GraphEdgeColorMode::UNIFORM;
+    
+    // Delete old graph markers
+    visualization_msgs::msg::Marker delete_nodes;
+    delete_nodes.header.frame_id = world_frame;
+    delete_nodes.header.stamp = now;
+    delete_nodes.action = visualization_msgs::msg::Marker::DELETEALL;
+    delete_nodes.ns = "graph_nodes";
+    markers.markers.push_back(delete_nodes);
+    
+    visualization_msgs::msg::Marker delete_edges;
+    delete_edges.header.frame_id = world_frame;
+    delete_edges.header.stamp = now;
+    delete_edges.action = visualization_msgs::msg::Marker::DELETEALL;
+    delete_edges.ns = "graph_edges";
+    markers.markers.push_back(delete_edges);
+    
+    visualization_msgs::msg::Marker delete_frontier;
+    delete_frontier.header.frame_id = world_frame;
+    delete_frontier.header.stamp = now;
+    delete_frontier.action = visualization_msgs::msg::Marker::DELETEALL;
+    delete_frontier.ns = "graph_frontier";
+    markers.markers.push_back(delete_frontier);
+    
+    // ========== GRAPH NODES (Spheres) ==========
+    visualization_msgs::msg::Marker node_marker;
+    node_marker.header.frame_id = world_frame;
+    node_marker.header.stamp = now;
+    node_marker.ns = "graph_nodes";
+    node_marker.type = visualization_msgs::msg::Marker::SPHERE_LIST;
+    node_marker.action = visualization_msgs::msg::Marker::ADD;
+    node_marker.id = 0;
+    node_marker.scale.x = node_size;
+    node_marker.scale.y = node_size;
+    node_marker.scale.z = node_size;
+    node_marker.pose.orientation.w = 1.0;
+    
+    // Find max degree for normalization
+    size_t max_degree = 1;
+    for (const auto& node : graph.nodes()) {
+        if (node.is_valid) {
+            max_degree = std::max(max_degree, node.edge_indices.size());
+        }
+    }
+    
+    // Find max cost for edge normalization
+    float max_cost = 0.1f;
+    for (const auto& edge : graph.edges()) {
+        if (edge.is_valid) {
+            max_cost = std::max(max_cost, edge.total_cost);
+        }
+    }
+    
+    for (size_t i = 0; i < graph.nodes().size(); ++i) {
+        const GraphNode& node = graph.nodes()[i];
+        if (!node.is_valid) continue;
+        
+        geometry_msgs::msg::Point pt;
+        const Eigen::Vector3f& c = graph.center(i);
+        pt.x = c.x();
+        pt.y = c.y();
+        pt.z = c.z();
+        node_marker.points.push_back(pt);
+        
+        // Color based on mode
+        std_msgs::msg::ColorRGBA color;
+        color.a = 0.9f;
+        
+        switch (node_color_mode) {
+            case GraphNodeColorMode::INSPECTION_STATE: {
+                if (node.inspected) {
+                    // Green for inspected
+                    color.r = 0.2f;
+                    color.g = 0.9f;
+                    color.b = 0.2f;
+                } else {
+                    // Red for uninspected
+                    color.r = 0.9f;
+                    color.g = 0.2f;
+                    color.b = 0.2f;
+                }
+                break;
+            }
+            case GraphNodeColorMode::CONFIDENCE: {
+                float conf = graph.confidence(i);
+                color.r = 1.0f - conf;
+                color.g = conf;
+                color.b = 0.2f;
+                break;
+            }
+            case GraphNodeColorMode::DEGREE: {
+                float normalized = static_cast<float>(node.edge_indices.size()) / 
+                                   static_cast<float>(max_degree);
+                // Blue (low) -> Green (medium) -> Red (high)
+                if (normalized < 0.5f) {
+                    color.r = 0.0f;
+                    color.g = normalized * 2.0f;
+                    color.b = 1.0f - normalized * 2.0f;
+                } else {
+                    color.r = (normalized - 0.5f) * 2.0f;
+                    color.g = 1.0f - (normalized - 0.5f) * 2.0f;
+                    color.b = 0.0f;
+                }
+                break;
+            }
+            case GraphNodeColorMode::IMPORTANCE:
+            default: {
+                float imp = graph.importance(i);
+                // Purple (low) -> Cyan (high)
+                color.r = 0.5f * (1.0f - imp);
+                color.g = 0.3f + 0.7f * imp;
+                color.b = 0.5f + 0.5f * imp;
+                break;
+            }
+        }
+        
+        node_marker.colors.push_back(color);
+    }
+    
+    markers.markers.push_back(node_marker);
+    
+    // ========== GRAPH EDGES (Lines) ==========
+    visualization_msgs::msg::Marker edge_marker;
+    edge_marker.header.frame_id = world_frame;
+    edge_marker.header.stamp = now;
+    edge_marker.ns = "graph_edges";
+    edge_marker.type = visualization_msgs::msg::Marker::LINE_LIST;
+    edge_marker.action = visualization_msgs::msg::Marker::ADD;
+    edge_marker.id = 0;
+    edge_marker.scale.x = edge_width;
+    edge_marker.pose.orientation.w = 1.0;
+    
+    for (const auto& edge : graph.edges()) {
+        if (!edge.is_valid) continue;
+        if (!graph.nodes()[edge.from_node].is_valid || 
+            !graph.nodes()[edge.to_node].is_valid) continue;
+        
+        const Eigen::Vector3f& c1 = graph.center(edge.from_node);
+        const Eigen::Vector3f& c2 = graph.center(edge.to_node);
+        
+        geometry_msgs::msg::Point p1, p2;
+        p1.x = c1.x(); p1.y = c1.y(); p1.z = c1.z();
+        p2.x = c2.x(); p2.y = c2.y(); p2.z = c2.z();
+        
+        edge_marker.points.push_back(p1);
+        edge_marker.points.push_back(p2);
+        
+        // Color based on mode
+        std_msgs::msg::ColorRGBA color;
+        color.a = 0.7f;
+        
+        switch (edge_color_mode) {
+            case GraphEdgeColorMode::COST: {
+                float normalized = std::min(1.0f, edge.total_cost / max_cost);
+                // Green (low cost) -> Yellow -> Red (high cost)
+                if (normalized < 0.5f) {
+                    color.r = normalized * 2.0f;
+                    color.g = 1.0f;
+                    color.b = 0.0f;
+                } else {
+                    color.r = 1.0f;
+                    color.g = 1.0f - (normalized - 0.5f) * 2.0f;
+                    color.b = 0.0f;
+                }
+                break;
+            }
+            case GraphEdgeColorMode::STRUCTURAL: {
+                if (edge.is_structural) {
+                    // Cyan for structural edges
+                    color.r = 0.0f;
+                    color.g = 0.9f;
+                    color.b = 0.9f;
+                } else {
+                    // Gray for regular edges
+                    color.r = 0.5f;
+                    color.g = 0.5f;
+                    color.b = 0.5f;
+                }
+                break;
+            }
+            case GraphEdgeColorMode::UNIFORM:
+            default: {
+                color.r = 0.3f;
+                color.g = 0.3f;
+                color.b = 0.8f;
+                break;
+            }
+        }
+        
+        // Add color for both endpoints
+        edge_marker.colors.push_back(color);
+        edge_marker.colors.push_back(color);
+    }
+    
+    markers.markers.push_back(edge_marker);
+    
+    // ========== FRONTIER NODES (Highlighted) ==========
+    auto frontier = graph.get_frontier_nodes();
+    if (!frontier.empty()) {
+        visualization_msgs::msg::Marker frontier_marker;
+        frontier_marker.header.frame_id = world_frame;
+        frontier_marker.header.stamp = now;
+        frontier_marker.ns = "graph_frontier";
+        frontier_marker.type = visualization_msgs::msg::Marker::SPHERE_LIST;
+        frontier_marker.action = visualization_msgs::msg::Marker::ADD;
+        frontier_marker.id = 0;
+        frontier_marker.scale.x = node_size * 1.5f;
+        frontier_marker.scale.y = node_size * 1.5f;
+        frontier_marker.scale.z = node_size * 1.5f;
+        frontier_marker.pose.orientation.w = 1.0;
+        frontier_marker.color.r = 1.0f;
+        frontier_marker.color.g = 0.6f;
+        frontier_marker.color.b = 0.0f;
+        frontier_marker.color.a = 0.8f;
+        
+        for (size_t node_idx : frontier) {
+            const Eigen::Vector3f& c = graph.center(node_idx);
+            geometry_msgs::msg::Point pt;
+            pt.x = c.x();
+            pt.y = c.y();
+            pt.z = c.z();
+            frontier_marker.points.push_back(pt);
+        }
+        
+        markers.markers.push_back(frontier_marker);
+    }
+}
