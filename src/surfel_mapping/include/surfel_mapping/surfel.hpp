@@ -58,6 +58,7 @@ struct Surfel {
     bool is_valid = false;
     bool is_mature = false;
     bool needs_eigen_update = false;
+    bool observed = false; // inspection state (is in fov of a viewpoint)
 
     void initialize(const Eigen::Vector3f& init_center, const Eigen::Vector3f& init_normal, float init_radius = 0.1f) {
         center = init_center;
