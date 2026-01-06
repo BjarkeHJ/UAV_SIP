@@ -52,7 +52,6 @@ private:
 
     void publish_visualization();
     void publish_surfel_markers(visualization_msgs::msg::MarkerArray& markers);
-    void publish_graph_markers(visualization_msgs::msg::MarkerArray& markers);
 
     // Components
     std::unique_ptr<CloudPreprocess> preprocessor_;
@@ -64,7 +63,6 @@ private:
 
     // Publishers
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr surfel_marker_pub_;
-    rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr graph_marker_pub_;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr processed_cloud_pub_;
 
     // Subscribers

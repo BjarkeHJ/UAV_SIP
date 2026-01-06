@@ -2,15 +2,11 @@
 
 using namespace surface_inspection_planning;
 
-SurfelFusion::SurfelFusion() : params_(), map_(), graph_params_(), graph_(nullptr) {
+SurfelFusion::SurfelFusion() : params_(), map_() {
     frame_count_ = 0;
     last_graph_update_frame_ = 0;
 }
-SurfelFusion::SurfelFusion(const Params& p, const SurfelMap::Params& map_p) : params_(p), map_(map_p), graph_params_(), graph_(nullptr) {
-    frame_count_ = 0;
-    last_graph_update_frame_ = 0;
-}
-SurfelFusion::SurfelFusion(const Params& p, const SurfelMap::Params& map_p, const GraphParams& graph_p) : params_(p), map_(map_p), graph_params_(graph_p), graph_(nullptr) {
+SurfelFusion::SurfelFusion(const Params& p, const SurfelMap::Params& map_p) : params_(p), map_(map_p) {
     frame_count_ = 0;
     last_graph_update_frame_ = 0;
 }
@@ -79,18 +75,8 @@ void SurfelFusion::process_scan(const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud
         process_accumulator(timestamp);
     }
 
-    if (params_.enable_graph) {
-        maybe_update_graph();
-        if (graph_) std::cout << "GRAPH SIZE: " << graph_->num_nodes() << std::endl; 
-    }
-
     auto end_time = std::chrono::high_resolution_clock::now();
     last_stats_.processing_time_ms = std::chrono::duration<double, std::milli>(end_time - start_time).count();
-
-    if (graph_) {
-        last_stats_.graph_nodes = graph_->num_nodes();
-        last_stats_.graph_edges = graph_->num_edges();
-    }
 }
 
 void SurfelFusion::flush_accumulator(uint64_t timestamp) {
@@ -100,11 +86,8 @@ void SurfelFusion::flush_accumulator(uint64_t timestamp) {
 
 void SurfelFusion::reset() {
     map_.clear();
-    if (graph_) graph_->clear();
     point_accumulator_.clear();
-    pending_changes_.clear();
     frame_count_ = 0;
-    last_graph_update_frame_ = 0;
     last_stats_ = FusionStats{};
 }
 
@@ -158,9 +141,6 @@ void SurfelFusion::fuse_point_to_surfel(size_t surfel_idx, const Eigen::Vector3f
     surfel.update_confidence(params_.confidence);
     surfel.update_maturity(map_.params().min_surfel_radius);
     map_.update_spatial_index(surfel_idx);
-
-    // track update
-    record_surfel_updated(surfel_idx);
 }
 
 void SurfelFusion::accumulate_point(const Eigen::Vector3f& point, const Eigen::Vector3f& normal, uint64_t timestamp) {
@@ -246,7 +226,6 @@ void SurfelFusion::process_accumulator(uint64_t timestamp) {
             size_t new_idx = map_.create_surfel(center, normal, params_.new_surfel_initial_radius, timestamp);
             if (new_idx != INVALID_SURFEL_IDX) {
                 last_stats_.surfels_created++;
-                record_surfel_created(new_idx);
             }
         }
 
@@ -273,72 +252,4 @@ void SurfelFusion::process_accumulator(uint64_t timestamp) {
             last_stats_.surfels_merged = merged;
         }
     }
-}
-
-void SurfelFusion::ensure_graph_exists() {
-    if (!graph_) {
-        graph_ = std::make_unique<SurfaceGraph>(map_, graph_params_);
-    }
-}
-
-void SurfelFusion::maybe_update_graph() {
-    if (frame_count_ - last_graph_update_frame_ < params_.graph_update_interval) {
-        return;
-    }
-    update_graph_now();
-}
-
-GraphUpdateStats SurfelFusion::update_graph_now() {
-    ensure_graph_exists();
-
-    auto start_time = std::chrono::high_resolution_clock::now();
-   
-    GraphUpdateStats stats;
-    
-    if (!pending_changes_.empty()) {
-        std::vector<size_t> new_vec(pending_changes_.new_surfels.begin(), pending_changes_.new_surfels.end());
-        std::vector<size_t> updated_vec(pending_changes_.updated_surfels.begin(), pending_changes_.updated_surfels.end());
-        std::vector<size_t> removed_vec(pending_changes_.removed_surfels.begin(), pending_changes_.removed_surfels.end());
-    
-        stats = graph_->update_incremental(new_vec, updated_vec, removed_vec);
-        pending_changes_.clear();
-    }
-    else if (graph_->empty() && !map_.empty()) {
-        graph_->rebuild();
-        stats.nodes_added = graph_->num_nodes();
-        stats.edges_created = graph_->num_edges();
-    }
-
-
-    last_graph_update_frame_ = frame_count_;
-
-    auto end_time = std::chrono::high_resolution_clock::now();
-    stats.update_time_ms = std::chrono::duration<double, std::milli>(end_time - start_time).count();
-
-    return stats;
-}
-
-void SurfelFusion::rebuild_graph() {
-    ensure_graph_exists();
-    graph_->rebuild();
-    pending_changes_.clear();
-    last_graph_update_frame_ = frame_count_;
-}
-
-void SurfelFusion::record_surfel_created(size_t surfel_idx) {
-    pending_changes_.new_surfels.insert(surfel_idx);
-    pending_changes_.updated_surfels.erase(surfel_idx);
-}
-
-void SurfelFusion::record_surfel_updated(size_t surfel_idx) {
-    // if not in new
-    if (pending_changes_.new_surfels.find(surfel_idx) == pending_changes_.new_surfels.end()) {
-        pending_changes_.updated_surfels.insert(surfel_idx);
-    }
-}
-
-void SurfelFusion::record_surfel_removed(size_t surfel_idx) {
-    pending_changes_.removed_surfels.insert(surfel_idx);
-    pending_changes_.new_surfels.erase(surfel_idx);
-    pending_changes_.updated_surfels.erase(surfel_idx);
 }

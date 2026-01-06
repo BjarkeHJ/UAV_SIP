@@ -11,7 +11,6 @@
 #include <chrono>
 
 #include "surfel_mapping/surfel_map.hpp"
-#include "surfel_mapping/surface_graph.hpp"
 
 namespace surface_inspection_planning {
 
@@ -43,10 +42,6 @@ public:
         size_t max_accumulator_size = 5000;
         uint32_t accumulator_process_interval = 5; // process every x frames
         
-        // Graph update
-        uint32_t graph_update_interval = 10;
-        bool enable_graph = true;
-
         ConfidenceParams confidence; // params for surfel fusion confidence tracking (in surfel.hpp)
     };
 
@@ -58,32 +53,12 @@ public:
         size_t surfels_updated = 0;
         size_t surfels_created = 0;
         size_t surfels_merged = 0;
-        size_t graph_nodes = 0;
-        size_t graph_edges = 0;
         double processing_time_ms = 0.0;
-        double graph_update_tims_ms = 0.0;
-    };
-
-    struct ChangeSet {
-        std::unordered_set<size_t> new_surfels;
-        std::unordered_set<size_t> updated_surfels;
-        std::unordered_set<size_t> removed_surfels;
-
-        void clear() {
-            new_surfels.clear();
-            updated_surfels.clear();
-            removed_surfels.clear();
-        }
-
-        bool empty() const {
-            return new_surfels.empty() && updated_surfels.empty() && removed_surfels.empty();
-        }
     };
 
     SurfelFusion();
     explicit SurfelFusion(const Params& p, const SurfelMap::Params& map_p);
-    SurfelFusion(const Params& p, const SurfelMap::Params& map_p, const GraphParams& graph_p);
-    
+
     const Params& params() const { return params_; }
     void set_params(const Params& p) {params_ = p; }
 
@@ -91,14 +66,8 @@ public:
     const SurfelMap& map() const { return map_; }
     SurfelMap& map_mutable() { return map_; }
 
-    // Graph
-    bool has_graph() const { return graph_ != nullptr; }
-    const SurfaceGraph& graph() const { return *graph_; }
-    SurfaceGraph& graph_mutable() { return *graph_; }
-
     // Stats
     const FusionStats& last_stats() const { return last_stats_; }
-    const ChangeSet& last_changes() const { return pending_changes_; }
 
     void process_scan(
         const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud, 
@@ -107,12 +76,6 @@ public:
         timestamp = 0
     );
     
-    // Update graph incremental using pending changes
-    GraphUpdateStats update_graph_now();
-
-    // full rebuild
-    void rebuild_graph();
-
     void flush_accumulator(uint64_t timestamp = 0);
     void reset();
 
@@ -127,25 +90,14 @@ private:
     void accumulate_point(const Eigen::Vector3f& point, const Eigen::Vector3f& normal, uint64_t timestamp);
     void process_accumulator(uint64_t timestamp);
 
-    void record_surfel_created(size_t surfel_idx);
-    void record_surfel_updated(size_t surfel_idx);
-    void record_surfel_removed(size_t surfel_idx);
-
-    void ensure_graph_exists();
-    void maybe_update_graph();
-
     Params params_;
     SurfelMap map_;
-    
-    GraphParams graph_params_;
-    std::unique_ptr<SurfaceGraph> graph_;
 
     std::deque<AccumulatedPoint> point_accumulator_;
     uint64_t frame_count_;
     uint64_t last_graph_update_frame_ = 0;
 
     FusionStats last_stats_;
-    ChangeSet pending_changes_;
 };
 
 }; // end namespace
