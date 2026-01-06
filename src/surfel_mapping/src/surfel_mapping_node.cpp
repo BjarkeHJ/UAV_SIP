@@ -16,6 +16,7 @@ SurfelMappingNode::SurfelMappingNode() : Node("surfel_mapping_node") {
 
     // Pub
     surfel_marker_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("surfel_map/markers", 10);
+    graph_marker_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("surfel_map/graph", 10);
     processed_cloud_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("surfel_map/processed_cloud", 10);
 
     // Sub
@@ -73,7 +74,13 @@ void SurfelMappingNode::declare_parameters() {
     this->declare_parameter("fuser.covariance_update_rate", 0.2);
 
     // Visualization
-    this->declare_parameter("viz.viz_color_mode", "normal");
+    this->declare_parameter("viz.show_surfels", true);
+    this->declare_parameter("viz.show_graph", true);
+    this->declare_parameter("viz.surfel_color_mode", "normal");
+    this->declare_parameter("viz.graph_node_color_mode", "importance");
+    this->declare_parameter("viz.graph_edge_color_mode", "structural");
+    this->declare_parameter("viz.graph_node_size", 0.05);
+    this->declare_parameter("viz.graph_edge_width", 0.01);
 }
 
 void SurfelMappingNode::initialize_preprocessor() {

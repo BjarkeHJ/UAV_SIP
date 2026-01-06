@@ -54,15 +54,15 @@ struct GraphEdge {
 struct GraphParams {
     // Node qualification (in addition to surfel's is_mature)
     float min_node_confidence = 0.1f;
-    float min_node_radius = 0.03f;
-    size_t min_node_observations = 3;
+    float min_node_radius = 0.1f;
+    size_t min_node_observations = 10;
     
     // Edge connectivity
-    float max_edge_distance = 0.8f;
-    float min_edge_distance = 0.05f;
+    float max_edge_distance = 1.0f;
+    float min_edge_distance = 0.1f;
     float min_normal_dot = 0.5f;            // cos(60°)
     float max_plane_step = 0.1f;
-    size_t max_neighbors_per_node = 12;
+    size_t max_neighbors_per_node = 2;
     
     // Edge cost weights
     float w_distance = 1.0f;

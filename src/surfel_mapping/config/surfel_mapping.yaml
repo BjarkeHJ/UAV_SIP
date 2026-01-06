@@ -85,4 +85,10 @@ surfel_mapping_node:
 
     # Visualization
     viz:
-      viz_color_mode: "normal"   # Select surfel coloring based on "confidence", "normal", or "point_count"
+      show_surfels: true
+      show_graph: true
+      surfel_color_mode: "normal"   # Select surfel coloring based on "confidence", "normal", or "point_count"
+      graph_node_color_mode: "importance"
+      graph_edge_color_mode: "structural"
+      graph_node_size: 0.05
+      graph_edge_width: 0.01
