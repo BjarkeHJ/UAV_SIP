@@ -18,6 +18,9 @@
 * 
 */
 
+namespace surface_inspection_planning {
+
+
 class CloudPreprocess {
 public:
     struct Params {
@@ -506,5 +509,7 @@ private:
         cloud_w_normals_out_->is_dense = false;
     }
 };
+
+}; // end namespace
 
 #endif

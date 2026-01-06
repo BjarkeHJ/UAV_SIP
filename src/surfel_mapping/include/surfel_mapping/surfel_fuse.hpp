@@ -6,6 +6,8 @@
 #include <Eigen/Geometry>
 #include <vector>
 #include <deque>
+#include <unordered_set>
+#include <memory>
 #include <chrono>
 
 #include "surfel_mapping/surfel_map.hpp"
@@ -22,25 +24,24 @@ public:
 
         // Fusion weights
         float base_point_weight = 1.0f;
-        float range_weight_scale = 0.0f;
+        // float range_weight_scale = 0.0f;
 
         // Update parameters
         float center_update_rate = 0.3f;
         float normal_update_rate = 0.1f;
         float covariance_update_rate = 0.2f;
 
-        // Confidence boost per observation
         float max_confidence = 1.0f;
 
         // New surfel creation
         uint32_t min_points_for_new_surfel = 5;
         float new_surfel_initial_radius = 0.01f;
-        float new_surfel_coherence_thresh = 0.15f; // max spread for coherent cluster
+        float new_surfel_coherence_thresh = 0.3f; // clustering distance (accumulator process)
 
         // Point accumulator management
         size_t max_accumulator_size = 5000;
         uint32_t accumulator_process_interval = 5; // process every x frames
-
+        
         ConfidenceParams confidence; // params for surfel fusion confidence tracking (in surfel.hpp)
     };
 
@@ -61,11 +62,20 @@ public:
     const Params& params() const { return params_; }
     void set_params(const Params& p) {params_ = p; }
 
+    // Map
     const SurfelMap& map() const { return map_; }
-    const FusionStats& last_stats() const {return last_stats_; }
+    SurfelMap& map_mutable() { return map_; }
 
-    void process_scan(const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud, const pcl::PointCloud<pcl::Normal>::Ptr& normals, const Eigen::Isometry3f& pose, uint64_t timestamp = 0);
+    // Stats
+    const FusionStats& last_stats() const { return last_stats_; }
 
+    void process_scan(
+        const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud, 
+        const pcl::PointCloud<pcl::Normal>::Ptr& normals, 
+        const Eigen::Isometry3f& pose, uint64_t 
+        timestamp = 0
+    );
+    
     void flush_accumulator(uint64_t timestamp = 0);
     void reset();
 
@@ -82,8 +92,11 @@ private:
 
     Params params_;
     SurfelMap map_;
+
     std::deque<AccumulatedPoint> point_accumulator_;
     uint64_t frame_count_;
+    uint64_t last_graph_update_frame_ = 0;
+
     FusionStats last_stats_;
 };
 

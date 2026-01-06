@@ -13,6 +13,7 @@ struct ConfidenceParams {
     float fit_sigma = 0.02f;              // RMS error (m) for c_fit ≈ 0.37
     float observation_halflife = 5.0f;    // Frames for c_temporal ≈ 0.63
     float temporal_weight = 0.3f;         // Balance between frame count and diversity
+    float area_scale = 0.05f;
 };
 
 struct Surfel {
@@ -55,6 +56,7 @@ struct Surfel {
 
     // State flags
     bool is_valid = false;
+    bool is_mature = false;
     bool needs_eigen_update = false;
 
     void initialize(const Eigen::Vector3f& init_center, const Eigen::Vector3f& init_normal, float init_radius = 0.1f) {
@@ -79,7 +81,8 @@ struct Surfel {
         planarity = 1.0f;
         rms_error = 0.0f;
 
-        is_valid = true;
+        // is_valid = true;
+        is_valid = false;
         needs_eigen_update = false;
     }
 
@@ -157,8 +160,11 @@ struct Surfel {
         float c_normal = get_normal_consistency();
         // Temporal: Seen accros multiple frames -> higher confidence
         float c_temporal = get_temporal_score(params.observation_halflife, params.temporal_weight);
-    
-        confidence = c_support * c_fit * c_normal * c_temporal;
+        // Area: Larger surfel -> important/confident patch
+        float area = M_PI * std::sqrt(eigenvalues(0)) * std::sqrt(eigenvalues(1));
+        float c_area = 1.0f - std::exp(-area / params.area_scale);
+
+        confidence = c_support * c_fit * c_normal * c_temporal * c_area;
     }
 
     float get_rms_error() const {
@@ -192,6 +198,11 @@ struct Surfel {
     float get_bounding_radius() const {
         return 3.0 * get_radius();
     }
+
+    void update_maturity(float min_radius) {
+        is_mature = is_valid && get_radius() >= min_radius;
+    }
+
 };
 
 }; // end namespace

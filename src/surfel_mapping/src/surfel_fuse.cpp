@@ -2,15 +2,16 @@
 
 using namespace surface_inspection_planning;
 
-SurfelFusion::SurfelFusion() : params_() {
+SurfelFusion::SurfelFusion() : params_(), map_() {
     frame_count_ = 0;
+    last_graph_update_frame_ = 0;
 }
 SurfelFusion::SurfelFusion(const Params& p, const SurfelMap::Params& map_p) : params_(p), map_(map_p) {
     frame_count_ = 0;
+    last_graph_update_frame_ = 0;
 }
 
 /* PUBLIC */
-
 void SurfelFusion::process_scan(const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud, const pcl::PointCloud<pcl::Normal>::Ptr& normals, const Eigen::Isometry3f& pose, uint64_t timestamp) {
     if (cloud->size() != normals->size()) {
         std::cerr << "[SurfelFusion] Point/Normal size mismatch!" << std::endl;
@@ -52,8 +53,11 @@ void SurfelFusion::process_scan(const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud
         // If good association found -> fuse it
         // Else accumulate and process later
         if (best_idx >= 0) {
-            fuse_point_to_surfel(static_cast<size_t>(best_idx), point_world, normal_world, timestamp);
-            surfel_updated[best_idx] = true;
+            size_t idx = static_cast<size_t>(best_idx);
+            fuse_point_to_surfel(best_idx, point_world, normal_world, timestamp);
+            if (idx < surfel_updated.size()) {
+                surfel_updated[best_idx] = true;
+            }
             last_stats_.points_associated++;
         }
         else {
@@ -107,7 +111,7 @@ void SurfelFusion::fuse_point_to_surfel(size_t surfel_idx, const Eigen::Vector3f
 
     // Update normal (weighted spherical averaging) - done every 10 observation (to reduce jitter)
     surfel.sum_normals += weight * normal;
-    if (surfel.observation_count % 10 == 0) {
+    if (surfel.observation_count % 5 == 0) {
         Eigen::Vector3f avg_normal = surfel.sum_normals.normalized();
         float alpha_n = params_.normal_update_rate;
         surfel.normal = (surfel.normal + alpha_n * (avg_normal - surfel.normal)).normalized();
@@ -120,18 +124,10 @@ void SurfelFusion::fuse_point_to_surfel(size_t surfel_idx, const Eigen::Vector3f
     surfel.total_weight += weight;
     surfel.point_count++;
 
-    // Update Covariance - done every 5 observations
+    // Update Covariance - done every 5 point count
     if (surfel.point_count % 5 == 0) {
         surfel.recompute_covariance();
         surfel.update_eigen();
-
-        // clamp radius
-        for (int i = 0; i < 2; ++i) {
-            float min_var = map_.params().min_surfel_radius * map_.params().min_surfel_radius;
-            float max_var = map_.params().max_surfel_radius * map_.params().max_surfel_radius;
-            surfel.eigenvalues(i) = std::clamp(surfel.eigenvalues(i), min_var, max_var);
-        }
-
         surfel.covariance = surfel.eigenvectors * surfel.eigenvalues.asDiagonal() * surfel.eigenvectors.transpose();
     }
 
@@ -143,6 +139,7 @@ void SurfelFusion::fuse_point_to_surfel(size_t surfel_idx, const Eigen::Vector3f
 
     // Update confidence
     surfel.update_confidence(params_.confidence);
+    surfel.update_maturity(map_.params().min_surfel_radius);
     map_.update_spatial_index(surfel_idx);
 }
 
@@ -158,6 +155,7 @@ void SurfelFusion::process_accumulator(uint64_t timestamp) {
     if (point_accumulator_.size() < params_.min_points_for_new_surfel) return;
 
     float cluster_size = params_.new_surfel_coherence_thresh * 2.0f; // cluster diameter
+    float coherence_thresh_sq = cluster_size * cluster_size;
     float inv_size = 1.0f / cluster_size;
 
     struct ClusterCell {
@@ -190,6 +188,7 @@ void SurfelFusion::process_accumulator(uint64_t timestamp) {
 
     // create surfels from valid clusters
     std::vector<size_t> points_to_remove;
+
     for (auto& [hash, cell] : clusters) {
         if (cell.point_indices.size() < params_.min_points_for_new_surfel) continue;
 
@@ -204,8 +203,7 @@ void SurfelFusion::process_accumulator(uint64_t timestamp) {
             float d_sq = (point_accumulator_[idx].position - center).squaredNorm();
             max_dist_sq = std::max(max_dist_sq, d_sq);
         }
-        float coherence_thresh_sq = params_.new_surfel_coherence_thresh * params_.new_surfel_coherence_thresh;
-        if (max_dist_sq > coherence_thresh_sq * 4.0f) continue;
+        if (max_dist_sq > coherence_thresh_sq) continue;
 
         // normal consistency
         float normal_variance = 0.0f;
@@ -218,6 +216,7 @@ void SurfelFusion::process_accumulator(uint64_t timestamp) {
 
         // check for existing surfel to merge with before creation
         size_t merge_target = map_.find_merge_target(center, normal);
+        
         if (merge_target != INVALID_SURFEL_IDX) {
             for (size_t idx : cell.point_indices) {
                 fuse_point_to_surfel(merge_target, point_accumulator_[idx].position, point_accumulator_[idx].normal, timestamp);
@@ -229,10 +228,6 @@ void SurfelFusion::process_accumulator(uint64_t timestamp) {
                 last_stats_.surfels_created++;
             }
         }
-
-        // create new surfel from cluster centroid, avg cluster normal, some init radius
-        // map_.create_surfel(center, normal, params_.new_surfel_initial_radius, timestamp);
-        // last_stats_.surfels_created++;
 
         // mark points in cluster for removal (removed from accumulator)
         for (size_t idx : cell.point_indices) {
