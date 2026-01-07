@@ -291,7 +291,7 @@ size_t SurfelMap::merge_similar_surfels() {
             if (idx_i >= surfels_.size() || !surfels_[idx_i].is_valid) continue;
 
             for (size_t j = i + 1; j < indices.size(); ++j) {
-                size_t idx_j = indices[i];
+                size_t idx_j = indices[j];
                 if (idx_j >= surfels_.size() || !surfels_[idx_j].is_valid) continue;
 
                 if (should_merge(surfels_[idx_i], surfels_[idx_j])) {

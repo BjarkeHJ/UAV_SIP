@@ -219,13 +219,18 @@ void SurfelFusion::process_accumulator(uint64_t timestamp) {
         
         if (merge_target != INVALID_SURFEL_IDX) {
             for (size_t idx : cell.point_indices) {
-                fuse_point_to_surfel(merge_target, point_accumulator_[idx].position, point_accumulator_[idx].normal, timestamp);
+                auto& acc_p = point_accumulator_[idx];
+                fuse_point_to_surfel(merge_target, acc_p.position, acc_p.normal, timestamp);
             }
         }
         else {
             size_t new_idx = map_.create_surfel(center, normal, params_.new_surfel_initial_radius, timestamp);
             if (new_idx != INVALID_SURFEL_IDX) {
                 last_stats_.surfels_created++;
+                for (size_t idx : cell.point_indices) {
+                    auto& acc_p = point_accumulator_[idx];
+                    fuse_point_to_surfel(new_idx, acc_p.position, acc_p.normal, timestamp);
+                }
             }
         }
 
