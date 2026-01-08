@@ -25,19 +25,6 @@ enum class SurfelColorMode {
     NORMAL_DIRECTION
 };
 
-enum class GraphNodeColorMode {
-    IMPORTANCE,          // Color by node importance
-    INSPECTION_STATE,    // Inspected vs uninspected
-    CONFIDENCE,          // Underlying surfel confidence  
-    DEGREE               // Number of connections
-};
-
-enum class GraphEdgeColorMode {
-    COST,                // Edge traversal cost
-    STRUCTURAL,          // Structural vs non-structural
-    UNIFORM              // Single color
-};
-
 class SurfelMappingNode : public rclcpp::Node {
 public:
     SurfelMappingNode();

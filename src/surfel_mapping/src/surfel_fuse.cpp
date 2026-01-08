@@ -225,11 +225,11 @@ void SurfelFusion::process_accumulator(uint64_t timestamp) {
     }
 
     // periodic merge
-    static size_t merge_counter = 0;
-    if (++merge_counter % 5 == 0) {
-        size_t merged = map_.merge_similar_surfels();
-        if (merged > 0) {
-            last_stats_.surfels_merged = merged;
-        }
-    }
+    // static size_t merge_counter = 0;
+    // if (++merge_counter % 5 == 0) {
+    //     size_t merged = map_.merge_similar_surfels();
+    //     if (merged > 0) {
+    //         last_stats_.surfels_merged = merged;
+    //     }
+    // }
 }

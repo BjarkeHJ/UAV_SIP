@@ -288,8 +288,11 @@ void SurfelMappingNode::publish_surfel_markers(visualization_msgs::msg::MarkerAr
         ellipse_marker.pose.orientation.z = q.z();
         ellipse_marker.pose.orientation.w = q.w();
         
-        ellipse_marker.scale.x = sigma1 * 2.0f;
-        ellipse_marker.scale.y = sigma2 * 2.0f;
+        // ellipse_marker.scale.x = sigma1 * 2.0f;
+        // ellipse_marker.scale.y = sigma2 * 2.0f;
+
+        ellipse_marker.scale.x = sigma1 * 1.0f;
+        ellipse_marker.scale.y = sigma2 * 1.0f;
         ellipse_marker.scale.z = 0.005f;
         
         // Color based on mode

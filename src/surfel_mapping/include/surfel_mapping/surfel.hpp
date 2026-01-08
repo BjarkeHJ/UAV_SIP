@@ -141,12 +141,12 @@ struct Surfel {
 
         // Update surfel center
         Eigen::Vector3f delta_center = point_on_plane - center;
-        center += (weight / new_w) * delta_center; 
+        center += (weight / new_w) * delta_center * 0.3; 
 
         // Update surfel normal
         sum_normals += weight * new_normal;
         Eigen::Vector3f avg_normal = sum_normals.normalized();
-        normal = (normal + /*update rate*/ (avg_normal - normal)).normalized();
+        normal = (normal + 0.1 * (avg_normal - normal)).normalized();
         compute_tangential_basis(); // udapte tangential basis
 
         // Update tangent covariance
