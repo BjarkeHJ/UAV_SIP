@@ -20,13 +20,15 @@ void SurfelFusion::process_scan(const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud
 
     auto start_time = std::chrono::high_resolution_clock::now();
 
+    // create stats for logging
     last_stats_ = FusionStats{};
     last_stats_.points_processed = cloud->size();
 
-    std::vector<bool> surfel_updated(map_.size(), false);
-
+    // current transform ot world frame
     const Eigen::Matrix3f R = pose.rotation();
     const Eigen::Vector3f t = pose.translation();
+
+    std::vector<bool> surfel_updated(map_.size(), false);
 
     for (size_t i = 0; i < cloud->size(); ++i) {
         const auto& p = cloud->points[i];
@@ -96,33 +98,8 @@ void SurfelFusion::reset() {
 void SurfelFusion::fuse_point_to_surfel(size_t surfel_idx, const Eigen::Vector3f& point, const Eigen::Vector3f& normal, uint64_t timestamp) {
     Surfel& surfel = map_.get_surfels_mutable()[surfel_idx];
 
-    auto [tangent_coords, normal_dist] = surfel.project_point(point);
-
-    // Accumulate surface fit (squared)
-    surfel.sum_sq_normal_dist += normal_dist * normal_dist;
-
-    const float weight = params_.base_point_weight;
-
-    // Update center (weighe EMA)
-    float alpha_c = params_.center_update_rate * weight / (surfel.total_weight + weight);
-    Eigen::Vector3f tangent_offset = tangent_coords.x() * surfel.tangent_u + tangent_coords.y() * surfel.tangent_v;
-    Eigen::Vector3f point_on_plane = surfel.center + tangent_offset;
-    surfel.center = surfel.center + alpha_c * (point_on_plane - surfel.center);
-
-    // Update normal (weighted spherical averaging) - done every 10 observation (to reduce jitter)
-    surfel.sum_normals += weight * normal;
-    if (surfel.observation_count % 5 == 0) {
-        Eigen::Vector3f avg_normal = surfel.sum_normals.normalized();
-        float alpha_n = params_.normal_update_rate;
-        surfel.normal = (surfel.normal + alpha_n * (avg_normal - surfel.normal)).normalized();
-        surfel.compute_tangential_basis(); // recompute tangent frame
-    }
-
-    // Update statistics for covariance
-    surfel.sum_tangent += weight * tangent_coords;
-    surfel.sum_outer += weight * (tangent_coords * tangent_coords.transpose());
-    surfel.total_weight += weight;
-    surfel.point_count++;
+    // Welford Algorithm Statistics Update (also point and normal)
+    surfel.update(point, normal);
 
     // Update Covariance - done every 5 point count
     if (surfel.point_count % 5 == 0) {

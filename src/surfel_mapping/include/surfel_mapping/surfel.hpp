@@ -8,22 +8,26 @@
 
 namespace surface_inspection_planning {
 
+struct VoxelKey {
+    int32_t x, y, z;
+    bool operator==(const VoxelKey& other) const {
+        return x == other.x && y == other.y && z == other.z;
+    }
+};
+
 struct ConfidenceParams {
     float support_halflife = 100.0f;      // Points for c_support ≈ 0.63
     float fit_sigma = 0.02f;              // RMS error (m) for c_fit ≈ 0.37
     float observation_halflife = 5.0f;    // Frames for c_temporal ≈ 0.63
     float temporal_weight = 0.3f;         // Balance between frame count and diversity
-    float area_scale = 0.05f;
 };
 
 struct Surfel {
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
     // Identifier
-    uint64_t id = 0;
-    int32_t voxel_x = 0;
-    int32_t voxel_y = 0;
-    int32_t voxel_z = 0;
+    uint64_t id;
+    VoxelKey voxel_key;
 
     // Geometric Properties (World Frame)
     Eigen::Vector3f center = Eigen::Vector3f::Zero();
@@ -36,19 +40,21 @@ struct Surfel {
     Eigen::Vector2f eigenvalues = Eigen::Vector2f::Constant(0.01f);
     Eigen::Matrix2f eigenvectors = Eigen::Matrix2f::Identity();
 
+    // 1D Gaussian along normal (2.5D component)
+    float normal_variance = 0.001f;
+
     // Statistics for incremental updates
     float total_weight = 0.0f;
-    Eigen::Vector2f sum_tangent = Eigen::Vector2f::Zero();
-    Eigen::Matrix2f sum_outer = Eigen::Matrix2f::Zero();
-    Eigen::Vector3f sum_normals = Eigen::Vector3f::Zero();
-    float sum_sq_normal_dist = 0.0f;
     uint32_t point_count = 0;
     uint32_t observation_count = 0;
 
+    Eigen::Matrix2f M2_tangent = Eigen::Matrix2f::Zero(); // tangent plane statistics Cov = M2_tangent / total_weight
+    float mean_normal_dist = 0.0f;
+    float M2_normal = 0.0f; // normal direction statistics Var = M2_normal / total_weight
+    Eigen::Vector3f sum_normals = Eigen::Vector3f::Zero();
+
     // Confidence metric
     float confidence = 0.0f;
-    float planarity = 0.0f;
-    float rms_error = 0.0f;
 
     // Temporal info
     uint64_t creation_stamp = 0;
@@ -69,20 +75,19 @@ struct Surfel {
         covariance = Eigen::Matrix2f::Identity() * var;
         eigenvalues = Eigen::Vector2f::Constant(var);
         eigenvectors = Eigen::Matrix2f::Identity();
+        normal_variance = 0.1f * var;
 
         total_weight = 1.0f;
-        sum_tangent = Eigen::Vector2f::Zero();
-        sum_outer = Eigen::Matrix2f::Zero();
-        sum_normals = normal;
-        sum_sq_normal_dist = 0.0f;
         point_count = 1;
         observation_count = 1;
 
+        M2_tangent = Eigen::Matrix2f::Zero();
+        mean_normal_dist = 0.0f;
+        M2_normal = 0.0f;
+        sum_normals = normal;
+        
         confidence = 0.01f;
-        planarity = 1.0f;
-        rms_error = 0.0f;
 
-        // is_valid = true;
         is_valid = false;
         needs_eigen_update = false;
     }
@@ -96,58 +101,91 @@ struct Surfel {
     std::pair<Eigen::Vector2f, float> project_point(const Eigen::Vector3f& point) const {
         Eigen::Vector3f diff = point - center;
         float normal_dist = diff.dot(normal);
-        Eigen::Vector3f projected = point - normal_dist * normal;
-        Eigen::Vector3f in_plane = projected - center;
+        Eigen::Vector3f in_plane = diff - normal_dist * normal;
         Eigen::Vector2f tangent_coords(in_plane.dot(tangent_u), in_plane.dot(tangent_v));
         return {tangent_coords, normal_dist};
     }
 
-    float mahalanobis_distance_sq(const Eigen::Vector2f& tangent_coords) const {
-        Eigen::Vector2f centered = tangent_coords - get_centered_tangent();
-        Eigen::Vector2f in_eigen = eigenvectors.transpose() * centered; // dot product between centered and each eigenvector
-
-        float d_sq = 0.0f;
+    float mahalanobis_distance_3d(const Eigen::Vector3f point) const {
+        /* Main */
+        auto [tangent_coords, normal_dist] = project_point(point);
+        
+        Eigen::Vector2f in_eigen = eigenvectors.transpose() * tangent_coords;
+        float mahal_tangent = 0.0f;
         for (int i = 0; i < 2; ++i) {
             if (eigenvalues(i) > 1e-8f) {
-                d_sq += (in_eigen(i) * in_eigen(i)) / eigenvalues(i);
+                mahal_tangent += (in_eigen(i) * in_eigen(i)) / eigenvalues(i);
             }
         }
 
-        return d_sq;
+        float mahal_normal = 0.0f;
+        if (normal_variance > 1e-8f) {
+            float centered = normal_dist - mean_normal_dist;
+            mahal_normal = (centered * centered) / normal_variance;
+        }
+
+        return mahal_tangent + mahal_normal;
     }
 
-    Eigen::Vector2f get_centered_tangent() const {
-        if (point_count > 0 && total_weight > 1e-6f) {
-            return sum_tangent / total_weight;
-        }
-        return Eigen::Vector2f::Zero();
+    bool update(const Eigen::Vector3f& new_point, const Eigen::Vector3f& new_normal, float weight = 1.0f) {
+        /* Update surfel statistics + center + normal */
+        if (weight <= 0.0f) return false;
+
+        // transform point to tangent_basis (3D)
+        auto [tangent_coords, normal_dist] = project_point(new_point);
+        Eigen::Vector3f tangent_offset = tangent_coords.x() * tangent_u + tangent_coords.y() * tangent_v;
+        Eigen::Vector3f point_on_plane = center + tangent_offset;
+
+        float old_w = total_weight;
+        float new_w = old_w + weight;
+
+        // Update surfel center
+        Eigen::Vector3f delta_center = point_on_plane - center;
+        center += (weight / new_w) * delta_center; 
+
+        // Update surfel normal
+        sum_normals += weight * new_normal;
+        Eigen::Vector3f avg_normal = sum_normals.normalized();
+        normal = (normal + /*update rate*/ (avg_normal - normal)).normalized();
+        compute_tangential_basis(); // udapte tangential basis
+
+        // Update tangent covariance
+        auto [new_tangent, _] = project_point(point_on_plane); // 2D point
+        M2_tangent += weight * (tangent_coords * new_tangent.transpose());
+
+        // Update normal variance
+        float delta_n = normal_dist - mean_normal_dist;
+        mean_normal_dist += (weight / new_w) * delta_n;
+        float delta2_n = normal_dist - mean_normal_dist; // delta after mean adjust
+        M2_normal += weight * delta_n * delta2_n;
+
+        total_weight = new_w;
+        point_count++;
+
+        return true;
+    }
+
+    void recompute_covariance() {
+        if (point_count < 3 || total_weight < 1e-6f) return;
+        covariance = M2_tangent / total_weight;
+        covariance += Eigen::Matrix2f::Identity() * 1e-6f;
+        covariance = (covariance + covariance.transpose()) * 0.5f;
+        needs_eigen_update = true;
+    }
+
+    void recompute_normal_variance() {
+        if (point_count < 2 || total_weight < 1e-6f) return;
+        normal_variance = std::max(M2_normal / total_weight, 1e-8f);
     }
 
     void update_eigen() {
         if (!needs_eigen_update) return;
         Eigen::SelfAdjointEigenSolver<Eigen::Matrix2f> es(covariance);
         if (es.info() == Eigen::Success) {
-            eigenvalues = es.eigenvalues();
+            eigenvalues = es.eigenvalues().cwiseMax(1e-8f);
             eigenvectors = es.eigenvectors();
-
-            eigenvalues = eigenvalues.cwiseMax(1e-8f);
-
-            float lambda_max = eigenvalues.maxCoeff();
-            float lambda_min = eigenvalues.minCoeff();
-            if (lambda_max > 1e-8f) {
-                planarity = (lambda_max - lambda_min) / lambda_max;
-            }
         }
         needs_eigen_update = false;
-    }
-
-    void recompute_covariance() {
-        if (point_count < 3 || total_weight < 1e-6f) return;
-        Eigen::Vector2f mean = sum_tangent / total_weight;
-        covariance = (sum_outer / total_weight) - (mean * mean.transpose()); // E[xx^T] - E[x]E[x]^T
-        covariance += Eigen::Matrix2f::Identity() * 1e-6f; // regularization
-        covariance = (covariance + covariance.transpose()) * 0.5f; // ensure symmetry
-        needs_eigen_update = true;
     }
 
     void update_confidence(const ConfidenceParams& params) {
@@ -162,14 +200,34 @@ struct Surfel {
         // Temporal: Seen accros multiple frames -> higher confidence
         float c_temporal = get_temporal_score(params.observation_halflife, params.temporal_weight);
         // Area: Larger surfel -> important/confident patch
-        float area = M_PI * std::sqrt(eigenvalues(0)) * std::sqrt(eigenvalues(1));
-        float c_area = 1.0f - std::exp(-area / params.area_scale);
 
-        confidence = c_support * c_fit * c_normal * c_temporal * c_area;
+        confidence = c_support * c_fit * c_normal * c_temporal;
     }
 
+    Eigen::Matrix3f get_orientation_matrix() const {
+        Eigen::Vector2f ev1_2d = eigenvectors.col(0);
+        Eigen::Vector2f ev2_2d = eigenvectors.col(1);
+        Eigen::Vector3f principal_1 = (ev1_2d.x() * tangent_u + ev1_2d.y() * tangent_v).normalized();
+        Eigen::Vector3f principal_2 = (ev2_2d.x() * tangent_u + ev2_2d.y() * tangent_v).normalized();
+    
+        Eigen::Matrix3f R;
+        R.col(0) = principal_1;
+        R.col(1) = principal_2;
+        R.col(2) = normal;
+
+        if (R.determinant() < 0) {
+            R.col(1) = -R.col(1);
+        }
+        
+        return R;
+    }
+
+
+    /* Accessors - need cleanup */
+
     float get_rms_error() const {
-        return (point_count > 0) ? std::sqrt(sum_sq_normal_dist) / static_cast<float>(point_count) : 0.0f;
+        if (point_count <= 1) return 0.0f;
+        return std::sqrt(M2_normal / static_cast<float>(point_count));
     }
 
     float get_planarity() const {
