@@ -176,13 +176,13 @@ private:
             cell.range_sq = std::numeric_limits<float>::infinity();
         }
 
-        // parallelize here?
-        for (int vd = 0; vd < H_; ++vd) {
-            for (int ud = 0; ud < W_; ++ud) {
-                grid_ds_[idx(ud, vd)].valid = false;
-                grid_ds_[idx(ud, vd)].range_sq = std::numeric_limits<float>::infinity();
-            }
-        }
+        // // parallelize here?
+        // for (int vd = 0; vd < H_; ++vd) {
+        //     for (int ud = 0; ud < W_; ++ud) {
+        //         grid_ds_[idx(ud, vd)].valid = false;
+        //         grid_ds_[idx(ud, vd)].range_sq = std::numeric_limits<float>::infinity();
+        //     }
+        // }
 
         // project to downsampled grid
         for (const auto& p : in->points) {

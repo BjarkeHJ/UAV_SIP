@@ -7,7 +7,6 @@
 #include <vector>
 #include <deque>
 #include <unordered_set>
-#include <memory>
 #include <chrono>
 
 #include "surfel_mapping/surfel_map.hpp"
@@ -41,7 +40,7 @@ public:
         // Point accumulator management
         size_t max_accumulator_size = 5000;
         uint32_t accumulator_process_interval = 5; // process every x frames
-        
+    
         ConfidenceParams confidence; // params for surfel fusion confidence tracking (in surfel.hpp)
     };
 
@@ -53,29 +52,22 @@ public:
         size_t surfels_updated = 0;
         size_t surfels_created = 0;
         size_t surfels_merged = 0;
+        size_t graph_nodes = 0;
+        size_t graph_edges = 0;
         double processing_time_ms = 0.0;
+        double graph_update_time_ms = 0.0;
     };
 
     SurfelFusion();
     explicit SurfelFusion(const Params& p, const SurfelMap::Params& map_p);
-
     const Params& params() const { return params_; }
     void set_params(const Params& p) {params_ = p; }
 
-    // Map
     const SurfelMap& map() const { return map_; }
-    SurfelMap& map_mutable() { return map_; }
-
-    // Stats
     const FusionStats& last_stats() const { return last_stats_; }
 
-    void process_scan(
-        const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud, 
-        const pcl::PointCloud<pcl::Normal>::Ptr& normals, 
-        const Eigen::Isometry3f& pose, uint64_t 
-        timestamp = 0
-    );
-    
+    void process_scan(const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud, const pcl::PointCloud<pcl::Normal>::Ptr& normals, const Eigen::Isometry3f& pose, uint64_t timestamp = 0);
+
     void flush_accumulator(uint64_t timestamp = 0);
     void reset();
 
@@ -90,14 +82,15 @@ private:
     void accumulate_point(const Eigen::Vector3f& point, const Eigen::Vector3f& normal, uint64_t timestamp);
     void process_accumulator(uint64_t timestamp);
 
+
+
     Params params_;
     SurfelMap map_;
-
     std::deque<AccumulatedPoint> point_accumulator_;
     uint64_t frame_count_;
     uint64_t last_graph_update_frame_ = 0;
-
     FusionStats last_stats_;
+
 };
 
 }; // end namespace
