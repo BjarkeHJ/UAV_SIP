@@ -96,12 +96,6 @@ public:
     MapStats get_stats() const;
     
 private:
-    /* new */
-    bool is_compatible(const Surfel& surfel, const Eigen::Vector3f& point, const Eigen::Vector3f& normal, float& maha_dist_out) const;
-    float compute_match_score(const Surfel& surfel, const Eigen::Vector3f& point, const Eigen::Vector3f& normal, float maha_dist) const;
-    /*     */
-    
-
     VoxelKey point_to_voxel(const Eigen::Vector3f& p) const;
     void merge_surfels(size_t into_idx, size_t from_idx);
     bool should_merge(const Surfel& s1, const Surfel& s2) const;

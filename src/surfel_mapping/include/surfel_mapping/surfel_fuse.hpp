@@ -24,7 +24,6 @@ public:
 
         // Fusion weights
         float base_point_weight = 1.0f;
-        // float range_weight_scale = 0.0f;
 
         // Update parameters
         float center_update_rate = 0.3f;
@@ -95,8 +94,6 @@ private:
 
     std::deque<AccumulatedPoint> point_accumulator_;
     uint64_t frame_count_;
-    uint64_t last_graph_update_frame_ = 0;
-
     FusionStats last_stats_;
 };
 

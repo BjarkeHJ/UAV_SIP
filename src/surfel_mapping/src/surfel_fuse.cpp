@@ -4,11 +4,9 @@ using namespace surface_inspection_planning;
 
 SurfelFusion::SurfelFusion() : params_(), map_() {
     frame_count_ = 0;
-    last_graph_update_frame_ = 0;
 }
 SurfelFusion::SurfelFusion(const Params& p, const SurfelMap::Params& map_p) : params_(p), map_(map_p) {
     frame_count_ = 0;
-    last_graph_update_frame_ = 0;
 }
 
 /* PUBLIC */
@@ -164,7 +162,7 @@ void SurfelFusion::process_accumulator(uint64_t timestamp) {
     }
 
     // create surfels from valid clusters
-    std::vector<size_t> points_to_remove;
+    std::vector<size_t> points_to_remove; // could be a set to avoid dupes (filtered in the end now)
 
     for (auto& [hash, cell] : clusters) {
         if (cell.point_indices.size() < params_.min_points_for_new_surfel) continue;

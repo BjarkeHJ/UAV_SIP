@@ -74,8 +74,6 @@ size_t SurfelMap::add_surfel(const Surfel& surfel) {
     Surfel s = surfel;
     s.id = next_surfel_id_;
     s.is_valid = true;
-
-    // VoxelKey key = point_to_voxel(s.center);
     s.voxel_key = key;
 
     size_t idx = surfels_.size();
