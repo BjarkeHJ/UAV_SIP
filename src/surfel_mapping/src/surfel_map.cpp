@@ -110,9 +110,10 @@ size_t SurfelMap::find_merge_target(const Eigen::Vector3f& center, const Eigen::
     float best_score = -1.0f;
 
     // searching for best merge target in 3x3x3 neighborhood
-    for (int dx = -1; dx <= 1; ++dx) {
-        for (int dy = -1; dy <= 1; ++dy) {
-            for (int dz = -1; dz <= 1; ++dz) {
+    int merge_rad = 1;
+    for (int dx = -merge_rad; dx <= merge_rad; ++dx) {
+        for (int dy = -merge_rad; dy <= merge_rad; ++dy) {
+            for (int dz = -merge_rad; dz <= merge_rad; ++dz) {
                 VoxelKey key{center_key.x + dx, center_key.y + dy, center_key.z + dz};
 
                 auto it = voxel_index_.find(key);
@@ -122,6 +123,7 @@ size_t SurfelMap::find_merge_target(const Eigen::Vector3f& center, const Eigen::
                     if (idx >= surfels_.size() || !surfels_[idx].is_valid) continue;
 
                     const Surfel& existing = surfels_[idx];
+                    if (!existing.is_valid) continue;
 
                     float normal_dot = std::abs(normal.dot(existing.normal));
                     if (normal_dot < params_.merge_normal_dot) continue;
@@ -148,7 +150,7 @@ void SurfelMap::find_association_candidates(const Eigen::Vector3f& point, const 
     // get voxel key from point
     VoxelKey center_key = point_to_voxel(point);
     
-    // check proximity voxels for surfel assciation (1 voxel nb)
+    // check proximity voxels for surfel assciation
     constexpr int search_radius = 1;
     for (int dx = -search_radius; dx <= search_radius; ++dx) {
         for (int dy = -search_radius; dy <= search_radius; ++dy) {
@@ -322,9 +324,11 @@ SurfelMap::MapStats SurfelMap::get_stats() const {
     float conf_sum = 0.0f;
     float count_sum = 0.0f;
     float r_sum = 0.0f;
+
     for (const auto& s : surfels_) {
-        if (s.is_valid) {
-            stats.valid_surfels++;
+        // if (s.is_valid) {
+        if (s.is_mature) {
+            stats.valid_surfels++; // actual valid and mature surfels
             conf_sum += s.confidence;
             count_sum += static_cast<float>(s.point_count);
             r_sum += s.get_radius();

@@ -70,6 +70,7 @@ void SurfelMappingNode::declare_parameters() {
     this->declare_parameter("fuser.new_surfel_initial_radius", 0.1);
     this->declare_parameter("fuser.center_update_rate", 0.3);
     this->declare_parameter("fuser.normal_update_rate", 0.1);
+    this->declare_parameter("fuser.covariance_update_rate", 0.2);
 
     // Visualization
     this->declare_parameter("viz.viz_color_mode", "normal");
@@ -106,6 +107,7 @@ void SurfelMappingNode::initialize_fuser() {
     fp.new_surfel_initial_radius = this->get_parameter("fuser.new_surfel_initial_radius").as_double();
     fp.center_update_rate = this->get_parameter("fuser.center_update_rate").as_double();
     fp.normal_update_rate = this->get_parameter("fuser.normal_update_rate").as_double();
+    fp.covariance_update_rate = this->get_parameter("fuser.covariance_update_rate").as_double();
 
     fuser_ = std::make_unique<SurfelFusion>(fp, mp);
 }
@@ -133,7 +135,6 @@ void SurfelMappingNode::cloud_callback(const sensor_msgs::msg::PointCloud2::Shar
     preprocessor_->set_input_cloud(cloud_in);
     preprocessor_->downsample();
     preprocessor_->normal_estimation();
-    // preprocessor_->transform_output_to_world();
     auto pp_end = std::chrono::high_resolution_clock::now();
     double pp_time = std::chrono::duration<double, std::milli>(pp_end - pp_start).count();
     
@@ -144,20 +145,20 @@ void SurfelMappingNode::cloud_callback(const sensor_msgs::msg::PointCloud2::Shar
 
 
     if (cloud->empty() || normals->empty()) return;
-
+    
     uint64_t timestamp = rclcpp::Time(msg->header.stamp).nanoseconds();
     fuser_->process_scan(cloud, normals, pose, timestamp);
 
-    // RCLCPP_INFO(this->get_logger(),
-    //     "Preprocess Time: %.f ms", pp_time
-    // );
+    RCLCPP_INFO(this->get_logger(),
+        "Preprocess Time: %.f ms", pp_time
+    );
 
     const auto& stats = fuser_->last_stats();
-    // RCLCPP_INFO(this->get_logger(),
-    //     "Fusion: %zu pts, %zu assoc, %zu new surfels, %.f ms",
-    //     stats.points_processed, stats.points_associated,
-    //     stats.surfels_created, stats.processing_time_ms
-    // );
+    RCLCPP_INFO(this->get_logger(),
+        "Fusion: %zu pts, %zu assoc, %zu new surfels, %.f ms",
+        stats.points_processed, stats.points_associated,
+        stats.surfels_created, stats.processing_time_ms
+    );
 
     if (processed_cloud_pub_->get_subscription_count() > 0) {
         sensor_msgs::msg::PointCloud2 out_msg;
@@ -233,7 +234,8 @@ void SurfelMappingNode::publish_visualization() {
     
     int id = 0;
     for (const auto& surfel : surfels) {
-        if (!surfel.is_valid) continue;
+        // if (!surfel.is_valid) continue;
+        if (!surfel.is_mature) continue;
         
         ellipse_marker.id = id++;
         ellipse_marker.pose.position.x = surfel.center.x();
