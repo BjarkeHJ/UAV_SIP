@@ -10,6 +10,13 @@
 
 namespace surface_inspection_planning {
 
+struct VoxelKey {
+    int32_t x, y, z;
+    bool operator==(const VoxelKey& other) const {
+        return x == other.x && y == other.y && z == other.z;
+    }
+};
+
 struct VoxelKeyHash {
     std::size_t operator()(const VoxelKey& k) const {
         // large primes for better distribution
@@ -39,8 +46,8 @@ public:
 
         // Association thresholds
         float normal_thresh_deg = 30.0f;
-        float normal_dist_thresh = 0.1f;
         float mahal_thresh = 9.21f; // Chi-squared 99% for 2DOF
+        float normal_dist_thresh = 0.1f;
 
         // Merging parameters
         float merge_center_dist = 0.1f;

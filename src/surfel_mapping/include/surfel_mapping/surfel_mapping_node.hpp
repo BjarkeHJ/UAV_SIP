@@ -38,7 +38,6 @@ private:
     bool get_sensor_pose(const rclcpp::Time& stamp, Eigen::Isometry3f& pose);
 
     void publish_visualization();
-    void publish_surfel_markers(visualization_msgs::msg::MarkerArray& markers);
 
     // Components
     std::unique_ptr<CloudPreprocess> preprocessor_;

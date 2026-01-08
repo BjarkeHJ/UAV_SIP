@@ -11,8 +11,6 @@ SurfelMap::SurfelMap(const Params& p) : params_(p), next_surfel_id_(1) {
 }
 
 /* PUBLIC */
-
-
 size_t SurfelMap::add_surfel(const Surfel& surfel) {
     VoxelKey key = point_to_voxel(surfel.center);
 
@@ -61,7 +59,9 @@ size_t SurfelMap::add_surfel(const Surfel& surfel) {
             Surfel s = surfel;
             s.id = next_surfel_id_++;
             s.is_valid = true;
-            s.voxel_key = key;
+            s.voxel_x = key.x;
+            s.voxel_y = key.y;
+            s.voxel_z = key.z;
             surfels_[weakest_idx] = s;
             return weakest_idx;
         }
@@ -74,7 +74,11 @@ size_t SurfelMap::add_surfel(const Surfel& surfel) {
     Surfel s = surfel;
     s.id = next_surfel_id_;
     s.is_valid = true;
-    s.voxel_key = key;
+
+    // VoxelKey key = point_to_voxel(s.center);
+    s.voxel_x = key.x;
+    s.voxel_y = key.y;
+    s.voxel_z = key.z;
 
     size_t idx = surfels_.size();
     surfels_.push_back(s);
@@ -106,10 +110,9 @@ size_t SurfelMap::find_merge_target(const Eigen::Vector3f& center, const Eigen::
     float best_score = -1.0f;
 
     // searching for best merge target in 3x3x3 neighborhood
-    int merge_rad = 1;
-    for (int dx = -merge_rad; dx <= merge_rad; ++dx) {
-        for (int dy = -merge_rad; dy <= merge_rad; ++dy) {
-            for (int dz = -merge_rad; dz <= merge_rad; ++dz) {
+    for (int dx = -1; dx <= 1; ++dx) {
+        for (int dy = -1; dy <= 1; ++dy) {
+            for (int dz = -1; dz <= 1; ++dz) {
                 VoxelKey key{center_key.x + dx, center_key.y + dy, center_key.z + dz};
 
                 auto it = voxel_index_.find(key);
@@ -119,7 +122,6 @@ size_t SurfelMap::find_merge_target(const Eigen::Vector3f& center, const Eigen::
                     if (idx >= surfels_.size() || !surfels_[idx].is_valid) continue;
 
                     const Surfel& existing = surfels_[idx];
-                    if (!existing.is_valid) continue;
 
                     float normal_dot = std::abs(normal.dot(existing.normal));
                     if (normal_dot < params_.merge_normal_dot) continue;
@@ -146,7 +148,7 @@ void SurfelMap::find_association_candidates(const Eigen::Vector3f& point, const 
     // get voxel key from point
     VoxelKey center_key = point_to_voxel(point);
     
-    // check proximity voxels for surfel assciation
+    // check proximity voxels for surfel assciation (1 voxel nb)
     constexpr int search_radius = 1;
     for (int dx = -search_radius; dx <= search_radius; ++dx) {
         for (int dy = -search_radius; dy <= search_radius; ++dy) {
@@ -169,10 +171,14 @@ void SurfelMap::find_association_candidates(const Eigen::Vector3f& point, const 
                     float normal_dot = std::abs(normal.dot(surfel.normal));
                     if (normal_dot < cos_normal_thresh_) continue;
 
-                    float mahal_dist = surfel.mahalanobis_distance_3d(point);
+                    // project point onto surfel
+                    auto [tangent_coords, normal_dist] = surfel.project_point(point); 
+                    if (std::abs(normal_dist) > params_.normal_dist_thresh) continue;
 
-                    if (mahal_dist < params_.mahal_thresh) {
-                        candidates.emplace_back(surfel_idx, mahal_dist);
+                    // check mahalanobis distance (point to surfel-distribution)
+                    float mahal_sq = surfel.mahalanobis_distance_sq(tangent_coords);
+                    if (mahal_sq < params_.mahal_thresh) {
+                        candidates.emplace_back(surfel_idx, mahal_sq);
                     }
                 }
             }
@@ -199,10 +205,14 @@ void SurfelMap::update_spatial_index(size_t surfel_idx) {
     VoxelKey new_key = point_to_voxel(surfel.center);
     
     // Fast path: voxel unchanged (most common case)
-    if (new_key == surfel.voxel_key) return;
+    if (new_key.x == surfel.voxel_x && 
+        new_key.y == surfel.voxel_y && 
+        new_key.z == surfel.voxel_z) {
+        return;
+    }
     
     // Slow path: voxel changed, need to update index
-    VoxelKey old_key = surfel.voxel_key;
+    VoxelKey old_key{surfel.voxel_x, surfel.voxel_y, surfel.voxel_z};
     
     // Remove from old voxel 
     auto old_it = voxel_index_.find(old_key);
@@ -224,7 +234,9 @@ void SurfelMap::update_spatial_index(size_t surfel_idx) {
     voxel_index_[new_key].push_back(surfel_idx);
     
     // Update cache
-    surfel.voxel_key = new_key;
+    surfel.voxel_x = new_key.x;
+    surfel.voxel_y = new_key.y;
+    surfel.voxel_z = new_key.z;
 }
 
 void SurfelMap::prune_and_rebuild() {
@@ -277,7 +289,7 @@ size_t SurfelMap::merge_similar_surfels() {
             if (idx_i >= surfels_.size() || !surfels_[idx_i].is_valid) continue;
 
             for (size_t j = i + 1; j < indices.size(); ++j) {
-                size_t idx_j = indices[j];
+                size_t idx_j = indices[i];
                 if (idx_j >= surfels_.size() || !surfels_[idx_j].is_valid) continue;
 
                 if (should_merge(surfels_[idx_i], surfels_[idx_j])) {
@@ -310,11 +322,9 @@ SurfelMap::MapStats SurfelMap::get_stats() const {
     float conf_sum = 0.0f;
     float count_sum = 0.0f;
     float r_sum = 0.0f;
-
     for (const auto& s : surfels_) {
-        // if (s.is_valid) {
-        if (s.is_mature) {
-            stats.valid_surfels++; // actual valid and mature surfels
+        if (s.is_valid) {
+            stats.valid_surfels++;
             conf_sum += s.confidence;
             count_sum += static_cast<float>(s.point_count);
             r_sum += s.get_radius();
@@ -370,6 +380,7 @@ void SurfelMap::merge_surfels(size_t into_idx, size_t from_idx) {
     target.total_weight = total_w;
     target.point_count += source.point_count;
     target.observation_count += source.observation_count;
+    target.sum_sq_normal_dist += source.sum_sq_normal_dist;
 
     float max_radius = std::max(target.get_radius(), source.get_radius());
     float separation = (target.center - source.center).norm();
