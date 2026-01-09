@@ -39,15 +39,35 @@ struct VoxelKeyHash {
     }
 };
 
-/* Pending Update Type */
-struct PendingPointUpdate {
-    Eigen::Vector3f position;
-    Eigen::Vector3f normal;
-    float weight;
-    Eigen::Vector3f view_direction;
+/* Measurement Type - In sensor frame*/
+struct PointWithNormal {
+    Eigen::Vector3f position{Eigen::Vector3f::Zero()};
+    Eigen::Vector3f normal{Eigen::Vector3f::Zero()};
+    float weight{0.0f};
 };
 
-/* Configurations */
+/* Default Configurations */
+struct PreprocessConfig {
+    bool enable_ground_filter{true};
+    float ground_z_min{0.2f};
+
+    size_t width{240};
+    size_t height{180};
+    float hfov_deg{106.0f};
+    float vfov_deg{86.0f};
+    float min_range{0.1f};
+    float max_range{10.0f};
+
+    size_t ds_factor{1};
+    size_t normal_est_px_radius{3};
+    bool orient_towards_sensor{true};
+
+    size_t range_smooth_iters{3};
+    float dpeth_sigma_m{0.05f};
+    float spatial_sigma_px{1.0f};
+    float max_depth_jump_m{0.10f};
+};
+
 struct SurfelConfig {
     size_t min_points_for_validity{10};
     float planarity_threshold{0.01f};
@@ -57,7 +77,17 @@ struct SurfelConfig {
 };
 
 struct SurfelMapConfig {
-
+    float voxel_size{0.3f};
+    float max_range{10.0f};
+    float min_range{0.1f};
+    size_t initial_bucket_count{10000};
+    float max_load_factor{0.75f};
+    
+    SurfelConfig surfel_config;
+    std::string map_frame{"odom"};
+    
+    bool compute_eigenvalues{true};
+    bool debug_output{true};
 };
 
 /* Statistics (Verbose) */
@@ -68,8 +98,8 @@ struct MapStatistics {
     size_t total_points_integrated{0};
 
     double last_update_time_ms{0.0};
-    double association_time_ms{0.0};
-    double update_time_ms{0.0};
+    double last_association_time_ms{0.0};
+    double last_commit_time_ms{0.0};
 
     Eigen::Vector3f min_bound{Eigen::Vector3f::Constant(std::numeric_limits<float>::max())};
     Eigen::Vector3f max_bound{Eigen::Vector3f::Constant(std::numeric_limits<float>::lowest())};

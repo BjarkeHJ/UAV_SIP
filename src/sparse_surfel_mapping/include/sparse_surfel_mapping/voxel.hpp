@@ -17,7 +17,7 @@ public:
     ~Voxel() = default;
 
     void integrate_point(const Eigen::Vector3f& point, const Eigen::Vector3f& normal, float weight /*Eigen::Vector3f view_direction*/);
-    void integrate_points(const std::vector<PendingPointUpdate>& updates);
+    void integrate_points(const std::vector<PointWithNormal>& updates);
     void finalize_surfel();
     void reset();
 

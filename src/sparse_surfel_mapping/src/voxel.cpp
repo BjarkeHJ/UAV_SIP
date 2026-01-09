@@ -12,7 +12,7 @@ void Voxel::integrate_point(const Eigen::Vector3f& point, const Eigen::Vector3f&
     surfel_.integrate_point(point, normal, weight);
 }
 
-void Voxel::integrate_points(const std::vector<PendingPointUpdate>& updates) {
+void Voxel::integrate_points(const std::vector<PointWithNormal>& updates) {
     surfel_.integrate_points(updates);
 }
 

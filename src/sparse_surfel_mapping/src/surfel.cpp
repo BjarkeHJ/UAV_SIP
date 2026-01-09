@@ -40,7 +40,7 @@ void Surfel::integrate_point(const Eigen::Vector3f& point, const Eigen::Vector3f
     eigen_dirty_ = true;
 }
 
-void Surfel::integrate_points(const std::vector<PendingPointUpdate>& points) {
+void Surfel::integrate_points(const std::vector<PointWithNormal>& points) {
     for (const auto& update : points) {
         integrate_point(update.position, update.normal, update.weight);
     }

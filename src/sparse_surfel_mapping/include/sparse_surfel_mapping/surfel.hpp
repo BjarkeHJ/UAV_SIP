@@ -21,7 +21,7 @@ public:
                          float weight = 1.0f, 
                          const Eigen::Vector3f view_direction = Eigen::Vector3f::Zero());
     
-    void integrate_points(const std::vector<PendingPointUpdate>& points);
+    void integrate_points(const std::vector<PointWithNormal>& points);
     void reset();
     void recompute_normal(const Eigen::Vector3f& force_orientation = Eigen::Vector3f::Zero());
 
