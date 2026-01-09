@@ -317,14 +317,30 @@ void ScanPreprocess::estimate_normals() {
                 normal = -normal;
             }
 
+            const float sin_theta = norm / (tangent_u.norm() * tangent_v.norm()); // sin theta from cross product |tu x tv| / (|tu| |tv|) 
+
             // create point w normal
             PointWithNormal pn;
             pn.position = Pc;
             pn.normal = normal;
-            pn.weight = 1.0f; // TODO
+            pn.weight = 0.0f; // TODO
+            compute_measurement_weight(pn, norm, sin_theta);
             points_with_normal_out_.push_back(pn);
         }
     }
+}
+
+void ScanPreprocess::compute_measurement_weight(PointWithNormal& pn, float normal_norm, float sin_theta) {
+    float range = pn.position.norm();
+    float alpha = 0.1;
+    float w_range = 1.0f / (1.0f + alpha * range * range);
+
+    Eigen::Vector3f view_dir = pn.position.normalized(); // sensor -> point
+    float cos_i = std::abs(pn.normal.dot(-view_dir));
+    float beta = 3;
+    float w_incidence = std::pow(cos_i, beta);
+
+    float w_sin = 2.0f / (1 + std::exp(sin_theta));
 }
 
 } // namespace
