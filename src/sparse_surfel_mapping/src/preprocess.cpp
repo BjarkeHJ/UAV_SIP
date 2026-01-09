@@ -123,7 +123,7 @@ void ScanPreprocess::smooth_range_image() {
     range_img_smooth_ = range_img_;
     const size_t R = std::max<size_t>(1, config_.normal_est_px_radius);
     const float spatial_sigma = config_.spatial_sigma_px;
-    const float depth_sigma = config_.dpeth_sigma_m;
+    const float depth_sigma = config_.depth_sigma_m;
     const float max_jump = config_.max_depth_jump_m;
     
     const float inv_2sigma_sp_sq = 1.0f / (2.0f * spatial_sigma * spatial_sigma);
@@ -332,15 +332,15 @@ void ScanPreprocess::estimate_normals() {
 
 void ScanPreprocess::compute_measurement_weight(PointWithNormal& pn, float normal_norm, float sin_theta) {
     float range = pn.position.norm();
-    float alpha = 0.1;
+    constexpr float alpha = 0.1;
     float w_range = 1.0f / (1.0f + alpha * range * range);
 
     Eigen::Vector3f view_dir = pn.position.normalized(); // sensor -> point
     float cos_i = std::abs(pn.normal.dot(-view_dir));
-    float beta = 3;
-    float w_incidence = std::pow(cos_i, beta);
+    float w_incidence = std::pow(cos_i, 1.5f);
 
-    float w_sin = 2.0f / (1 + std::exp(sin_theta));
+    float w_condition = std::clamp(sin_theta, 0.0f, 1.0f);
+    pn.weight = w_range * w_incidence * w_condition;
 }
 
 } // namespace

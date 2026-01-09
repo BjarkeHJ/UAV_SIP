@@ -9,6 +9,7 @@ SurfelMapNode::SurfelMapNode(const rclcpp::NodeOptions& options) : Node("surfel_
     // Create SurfelMap
     SurfelMapConfig config = load_configuration();
     surfel_map_ = std::make_unique<SurfelMap>(config);
+    preproc_ = std::make_unique<ScanPreprocess>(config.preprocess_config);
 
     // TF
     tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
@@ -30,8 +31,10 @@ SurfelMapNode::SurfelMapNode(const rclcpp::NodeOptions& options) : Node("surfel_
         );
     }
 
+    cloud_in_ = std::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
+
     RCLCPP_INFO(this->get_logger(), "SurfelMap node initialized");
-    RCLCPP_INFO(this->get_logger(), "  Map Frame: %s", map_frame_.c_str());
+    RCLCPP_INFO(this->get_logger(), "  Global Frame: %s", global_frame_.c_str());
     RCLCPP_INFO(this->get_logger(), "  Sensor Frame: %s", sensor_frame_.c_str());
     RCLCPP_INFO(this->get_logger(), "  Voxel Size: %.3f m", config.voxel_size);
 }
@@ -41,15 +44,30 @@ void SurfelMapNode::declare_parameters() {
     this->declare_parameter("pointcloud_topic", "/x500/lidar_front/points_raw");
 
     // Frame
-    this->declare_parameter("map_frame", "odom");
+    this->declare_parameter("global_frame", "odom");
     this->declare_parameter("sensor_frame", "lidar_frame");
 
     // Sensor
+    this->declare_parameter("width", 240);
+    this->declare_parameter("height", 180);
+    this->declare_parameter("hfov_deg", 106.0);
+    this->declare_parameter("vfov_deg", 86.0);
     this->declare_parameter("min_range", 0.1);
     this->declare_parameter("max_range", 10.0);
 
+    // Preprocess
+    this->declare_parameter("enable_ground_filter", true);
+    this->declare_parameter("ground_z_min", 0.2);
+    this->declare_parameter("downsample_factor", 1);
+    this->declare_parameter("normal_estimation_px_radius", 3);
+    this->declare_parameter("orient_towards_sensor", true);
+    this->declare_parameter("range_smooth_iters", 3);
+    this->declare_parameter("depth_sigma_m", 0.05);
+    this->declare_parameter("spatial_sigma_px", 1.0);
+    this->declare_parameter("max_depth_jump_m", 0.1);
+
     // Map
-    this->declare_parameter("voxel_size", 0.1);
+    this->declare_parameter("voxel_size", 0.5);
     this->declare_parameter("initial_bucket_count", 10000);
 
     // Surfel
@@ -68,7 +86,7 @@ void SurfelMapNode::declare_parameters() {
 
     // Load node parameters immediately
     pointcloud_topic_ = this->get_parameter("pointcloud_topic").as_string();
-    map_frame_ = this->get_parameter("map_frame").as_string();
+    global_frame_ = this->get_parameter("global_frame").as_string();
     sensor_frame_ = this->get_parameter("sensor_frame").as_string();
     publish_rate_ = this->get_parameter("publish_rate").as_double();
     publish_visualization_ = this->get_parameter("publish_visualization").as_bool();
@@ -77,18 +95,40 @@ void SurfelMapNode::declare_parameters() {
 
 SurfelMapConfig SurfelMapNode::load_configuration() {
     SurfelMapConfig config;
-
-    config.voxel_size = this->get_parameter("voxel_size").as_double();
+    
+    // sensor
     config.min_range = this->get_parameter("min_range").as_double();
     config.max_range = this->get_parameter("max_range").as_double();
-    config.initial_bucket_count = static_cast<size_t>(this->get_parameter("initial_bucket_count").as_int());
-    config.map_frame = map_frame_;
-    config.debug_output = this->get_parameter("deub_out").as_bool();
+    config.preprocess_config.min_range = config.min_range;
+    config.preprocess_config.max_range = config.max_range;
+    config.preprocess_config.width = this->get_parameter("width").as_int();
+    config.preprocess_config.height = this->get_parameter("height").as_int();
+    config.preprocess_config.hfov_deg = this->get_parameter("hfov_deg").as_double();
+    config.preprocess_config.vfov_deg = this->get_parameter("vfov_deg").as_double();
     
+    // preproc
+    config.preprocess_config.enable_ground_filter = this->get_parameter("enable_ground_filter").as_bool();
+    config.preprocess_config.ground_z_min = this->get_parameter("ground_z_min").as_double();
+    config.preprocess_config.ds_factor = this->get_parameter("downsample_factor").as_int();
+    config.preprocess_config.normal_est_px_radius = this->get_parameter("normal_estimation_px_radius").as_int();
+    config.preprocess_config.orient_towards_sensor = this->get_parameter("orient_towards_sensor").as_bool();
+    config.preprocess_config.range_smooth_iters = this->get_parameter("range_smooth_iters").as_int();
+    config.preprocess_config.depth_sigma_m = this->get_parameter("depth_sigma_m").as_double();
+    config.preprocess_config.spatial_sigma_px = this->get_parameter("spatial_sigma_px").as_double();
+    config.preprocess_config.max_depth_jump_m = this->get_parameter("max_depth_jump_m").as_double();
+
+    // map
+    config.voxel_size = this->get_parameter("voxel_size").as_double();
+    config.initial_bucket_count = static_cast<size_t>(this->get_parameter("initial_bucket_count").as_int());
+    config.map_frame = global_frame_;
+    config.debug_output = this->get_parameter("debug_out").as_bool();
+    
+    // surfel
     config.surfel_config.min_points_for_validity = static_cast<size_t>(this->get_parameter("min_points_per_surfel").as_int());
     config.surfel_config.planarity_threshold = this->get_parameter("planarity_threshold").as_double();
     config.surfel_config.scale_threshold = this->get_parameter("scale_threshold").as_double();
     config.surfel_config.degeneracy_threshold = this->get_parameter("degeneracy_threshold").as_double();
+
 
     return config;
 }
@@ -100,14 +140,86 @@ void SurfelMapNode::pointcloud_callback(const sensor_msgs::msg::PointCloud2::Sha
     if (!get_transform(msg->header.stamp, tf)) {
         RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
             "Failed to get transform from %s to %s",
-            msg->header.frame_id.c_str(), map_frame_.c_str());
+            msg->header.frame_id.c_str(), global_frame_.c_str());
     }
 
-    std::vector<PointWithNormal> pns;
+    pcl::fromROSMsg(*msg, *cloud_in_);
     
+    std::vector<PointWithNormal> pns;
+    preproc_->set_transform(tf);
+    if (!preproc_->set_input_cloud(cloud_in_)) return; 
+    preproc_->process();
+    preproc_->get_points_with_normal(pns);    
 
+    size_t integrated = surfel_map_->integrate_points(pns, tf);
 
+    RCLCPP_INFO(this->get_logger(), "Integrated: %zu points", integrated);
 }
 
+bool SurfelMapNode::get_transform(const rclcpp::Time& stamp, Eigen::Transform<float, 3, Eigen::Isometry>& tf) {
+    try {
+        auto transform = tf_buffer_->lookupTransform(global_frame_, sensor_frame_, stamp, rclcpp::Duration::from_seconds(0.1));
+        tf = tf2::transformToEigen(transform.transform).cast<float>();
+        return true;
+    }
+    catch (const tf2::TransformException& ex) {
+        RCLCPP_WARN(this->get_logger(), "TF Lookup Failed: %s", ex.what());
+        return false;
+    }
+}
+
+void SurfelMapNode::publish_visualization() {
+    visualization_msgs::msg::MarkerArray marker_array;
+
+    // delete previous
+    visualization_msgs::msg::Marker delete_marker;
+    delete_marker.header.frame_id = global_frame_;
+    delete_marker.header.stamp = this->now();
+    delete_marker.ns = "surfels";
+    delete_marker.action = visualization_msgs::msg::Marker::DELETEALL;
+    marker_array.markers.push_back(delete_marker);
+
+    const auto surfels = surfel_map_->get_valid_surfels();
+
+    int marker_id = 0;
+    for (const auto& surfel_ref : surfels) {
+        const Surfel& surfel = surfel_ref.get();
+
+        visualization_msgs::msg::Marker marker;
+        marker.header.frame_id = global_frame_;
+        marker.header.stamp = this->now();
+        marker.ns = "surfels";
+        marker.id = marker_id++;
+        marker.type = visualization_msgs::msg::Marker::ARROW;
+        marker.action = visualization_msgs::msg::Marker::ADD;
+
+        marker.pose.position.x = surfel.mean().x();
+        marker.pose.position.y = surfel.mean().y();
+        marker.pose.position.z = surfel.mean().z();
+
+        Eigen::Vector3f arrow_dir = Eigen::Vector3f::UnitX();
+        Eigen::Vector3f normal = surfel.normal();
+
+        Eigen::Quaternionf q;
+        q.setFromTwoVectors(arrow_dir, normal);
+        marker.pose.orientation.x = q.x();
+        marker.pose.orientation.y = q.y();
+        marker.pose.orientation.z = q.z();
+        marker.pose.orientation.w = q.w();
+        
+        marker.scale.x = surfel_marker_scale_ * 2.0f;
+        marker.scale.y = surfel_marker_scale_ * 0.3f;
+        marker.scale.z = surfel_marker_scale_ * 0.3f;
+        
+        marker.color.r = std::fabs(normal.x());
+        marker.color.r = std::fabs(normal.z());
+        marker.color.r = std::fabs(normal.y());
+        marker.color.a = 0.8f;
+        
+        marker_array.markers.push_back(marker);
+    }
+
+    surfel_marker_pub_->publish(marker_array);
+}
 
 } // namespace

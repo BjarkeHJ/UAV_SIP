@@ -8,6 +8,8 @@
 #include <tf2_ros/transform_listener.h>
 #include <tf2_eigen/tf2_eigen.hpp>
 
+#include <pcl_conversions/pcl_conversions.h>
+
 #include "sparse_surfel_mapping/preprocess.hpp"
 #include "sparse_surfel_mapping/surfel_map.hpp"
 
@@ -28,6 +30,7 @@ private:
     bool get_transform(const rclcpp::Time& stamp, Eigen::Transform<float, 3, Eigen::Isometry>& tf);
 
     // map
+    std::unique_ptr<ScanPreprocess> preproc_;
     std::unique_ptr<SurfelMap> surfel_map_;
 
     // tf
@@ -43,8 +46,10 @@ private:
     // timer
     rclcpp::TimerBase::SharedPtr viz_timer_;
 
+    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_in_;
+
     // params
-    std::string map_frame_;
+    std::string global_frame_;
     std::string sensor_frame_;
     std::string pointcloud_topic_;
     double publish_rate_;

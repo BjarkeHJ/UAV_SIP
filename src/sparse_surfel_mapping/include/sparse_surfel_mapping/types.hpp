@@ -63,7 +63,7 @@ struct PreprocessConfig {
     bool orient_towards_sensor{true};
 
     size_t range_smooth_iters{3};
-    float dpeth_sigma_m{0.05f};
+    float depth_sigma_m{0.05f};
     float spatial_sigma_px{1.0f};
     float max_depth_jump_m{0.10f};
 };
@@ -88,6 +88,8 @@ struct SurfelMapConfig {
     
     bool compute_eigenvalues{true};
     bool debug_output{true};
+
+    PreprocessConfig preprocess_config;
 };
 
 /* Statistics (Verbose) */

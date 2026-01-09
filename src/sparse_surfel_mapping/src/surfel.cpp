@@ -21,7 +21,7 @@ Surfel::Surfel(const SurfelConfig& config) : Surfel() {
     config_ = config;
 }
 
-void Surfel::integrate_point(const Eigen::Vector3f& point, const Eigen::Vector3f& normal, float weight = 1.0f, const Eigen::Vector3f view_direction = Eigen::Vector3f::Zero()) {
+void Surfel::integrate_point(const Eigen::Vector3f& point, const Eigen::Vector3f& normal, float weight, const Eigen::Vector3f view_direction) {
     if (weight <= 0.0f) {
         return;
     }
