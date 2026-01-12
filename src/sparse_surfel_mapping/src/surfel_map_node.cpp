@@ -171,53 +171,135 @@ bool SurfelMapNode::get_transform(const rclcpp::Time& stamp, Eigen::Transform<fl
 void SurfelMapNode::publish_visualization() {
     visualization_msgs::msg::MarkerArray marker_array;
 
+    const auto surfels = surfel_map_->get_valid_surfels();
+    if (surfels.empty()) return;
+
+    auto viz_now = this->get_clock()->now();
+
     // delete previous
     visualization_msgs::msg::Marker delete_marker;
     delete_marker.header.frame_id = global_frame_;
-    delete_marker.header.stamp = this->now();
-    delete_marker.ns = "surfels";
+    delete_marker.header.stamp = viz_now;
+    delete_marker.ns = "surfel_ellipses";
     delete_marker.action = visualization_msgs::msg::Marker::DELETEALL;
     marker_array.markers.push_back(delete_marker);
 
-    const auto surfels = surfel_map_->get_valid_surfels();
+    // Surfel Ellipses
+    visualization_msgs::msg::Marker surfel_ellipse;
+    surfel_ellipse.header.frame_id = global_frame_;
+    surfel_ellipse.header.stamp = viz_now;
+    surfel_ellipse.ns = "surfel_ellipses";
+    surfel_ellipse.type = visualization_msgs::msg::Marker::CYLINDER;
+    surfel_ellipse.action = visualization_msgs::msg::Marker::ADD;
+
+    // Surfel Normals
+    visualization_msgs::msg::Marker surfel_normal;
+    surfel_normal.header.frame_id = global_frame_;
+    surfel_normal.header.stamp = viz_now;
+    surfel_normal.ns = "surfel_normals";
+    surfel_normal.type = visualization_msgs::msg::Marker::LINE_LIST;
+    surfel_normal.action = visualization_msgs::msg::Marker::ADD;
+    surfel_normal.id = 0;
+    surfel_normal.scale.x = 0.01;
+    surfel_normal.color.r = 0.0f;
+    surfel_normal.color.g = 0.0f;
+    surfel_normal.color.b = 0.0f;
+    surfel_normal.color.a = 0.8f;
 
     int marker_id = 0;
     for (const auto& surfel_ref : surfels) {
         const Surfel& surfel = surfel_ref.get();
 
-        visualization_msgs::msg::Marker marker;
-        marker.header.frame_id = global_frame_;
-        marker.header.stamp = this->now();
-        marker.ns = "surfels";
-        marker.id = marker_id++;
-        marker.type = visualization_msgs::msg::Marker::ARROW;
-        marker.action = visualization_msgs::msg::Marker::ADD;
-
-        marker.pose.position.x = surfel.mean().x();
-        marker.pose.position.y = surfel.mean().y();
-        marker.pose.position.z = surfel.mean().z();
-
-        Eigen::Vector3f arrow_dir = Eigen::Vector3f::UnitX();
-        Eigen::Vector3f normal = surfel.normal();
-
-        Eigen::Quaternionf q;
-        q.setFromTwoVectors(arrow_dir, normal);
-        marker.pose.orientation.x = q.x();
-        marker.pose.orientation.y = q.y();
-        marker.pose.orientation.z = q.z();
-        marker.pose.orientation.w = q.w();
+        surfel_ellipse.id = marker_id++;
         
-        marker.scale.x = surfel_marker_scale_ * 2.0f;
-        marker.scale.y = surfel_marker_scale_ * 0.3f;
-        marker.scale.z = surfel_marker_scale_ * 0.3f;
+        // position
+        const Eigen::Vector3f& m = surfel.mean();
+        surfel_ellipse.pose.position.x = m.x();
+        surfel_ellipse.pose.position.y = m.y();
+        surfel_ellipse.pose.position.z = m.z();
+
+        const Eigen::Matrix3f& C = surfel.eigenvectors();
+        const Eigen::Vector3f& ev1 = C.col(1);
+        const Eigen::Vector3f& ev2 = C.col(2);
+        Eigen::Matrix3f R;
+        R.col(0) = ev1;
+        R.col(1) = ev2;
+        R.col(1) = surfel.normal();
+        if (R.determinant() < 0) {
+            R.col(1) = -R.col(1);
+        }
+
+        Eigen::Quaternionf q(R);
+        q.normalize();
+
+        // orientation
+        surfel_ellipse.pose.orientation.x = q.x();
+        surfel_ellipse.pose.orientation.y = q.y();
+        surfel_ellipse.pose.orientation.z = q.z();
+        surfel_ellipse.pose.orientation.w = q.w();
+
+        // scale
+        const Eigen::Vector3f& evals = surfel.eigenvalues();
+        surfel_ellipse.scale.x = std::sqrt(std::max(evals(1), 1e-6f));
+        surfel_ellipse.scale.y = std::sqrt(std::max(evals(2), 1e-6f));
+        surfel_ellipse.scale.z = 0.005f;
+
+        // color
+        surfel_ellipse.color.r = (surfel.normal().x() + 1.0f) * 0.5f;
+        surfel_ellipse.color.g = (surfel.normal().y() + 1.0f) * 0.5f;
+        surfel_ellipse.color.b = (surfel.normal().z() + 1.0f) * 0.5f;
+
+        marker_array.markers.push_back(surfel_ellipse);
+
+        // normal
+        geometry_msgs::msg::Point p1, p2;
+        p1.x = m.x();
+        p1.y = m.y();
+        p1.z = m.z();
+
+        float normal_len = 0.1f;
+        p2.x = m.x() + surfel.normal().x() * normal_len;
+        p2.x = m.y() + surfel.normal().y() * normal_len;
+        p2.x = m.z() + surfel.normal().z() * normal_len;
+
+        surfel_normal.points.push_back(p1);
+        surfel_normal.points.push_back(p2);
+
+        // visualization_msgs::msg::Marker marker;
+        // marker.header.frame_id = global_frame_;
+        // marker.header.stamp = this->now();
+        // marker.ns = "surfels";
+        // marker.id = marker_id++;
+        // marker.type = visualization_msgs::msg::Marker::ARROW;
+        // marker.action = visualization_msgs::msg::Marker::ADD;
+
+        // marker.pose.position.x = surfel.mean().x();
+        // marker.pose.position.y = surfel.mean().y();
+        // marker.pose.position.z = surfel.mean().z();
+
+        // Eigen::Vector3f arrow_dir = Eigen::Vector3f::UnitX();
+        // Eigen::Vector3f normal = surfel.normal();
+
+        // Eigen::Quaternionf q;
+        // q.setFromTwoVectors(arrow_dir, normal);
+        // marker.pose.orientation.x = q.x();
+        // marker.pose.orientation.y = q.y();
+        // marker.pose.orientation.z = q.z();
+        // marker.pose.orientation.w = q.w();
         
-        marker.color.r = std::fabs(normal.x());
-        marker.color.r = std::fabs(normal.z());
-        marker.color.r = std::fabs(normal.y());
-        marker.color.a = 0.8f;
+        // marker.scale.x = surfel_marker_scale_ * 2.0f;
+        // marker.scale.y = surfel_marker_scale_ * 0.3f;
+        // marker.scale.z = surfel_marker_scale_ * 0.3f;
         
-        marker_array.markers.push_back(marker);
+        // marker.color.r = std::fabs(normal.x());
+        // marker.color.r = std::fabs(normal.z());
+        // marker.color.r = std::fabs(normal.y());
+        // marker.color.a = 0.8f;
+        
+        // marker_array.markers.push_back(marker);
     }
+
+    marker_array.markers.push_back(surfel_normal);
 
     surfel_marker_pub_->publish(marker_array);
 }
