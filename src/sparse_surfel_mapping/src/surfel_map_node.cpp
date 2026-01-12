@@ -2,7 +2,7 @@
 
 namespace sparse_surfel_map {
 
-SurfelMapNode::SurfelMapNode(const rclcpp::NodeOptions& options) : Node("surfel_map_node") {
+SurfelMapNode::SurfelMapNode(const rclcpp::NodeOptions& options) : Node("surfel_map_node", options) {
     // Declare and load parameters
     declare_parameters();
 
@@ -23,8 +23,6 @@ SurfelMapNode::SurfelMapNode(const rclcpp::NodeOptions& options) : Node("surfel_
     );
     
     // Surfel viz
-    path_pub_ = this->create_publisher<nav_msgs::msg::Path>("surfel_planner/path", 10);
-
     surfel_marker_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("surfel_map/markers", 10);
     if (publish_rate_ > 0.0) {
         viz_timer_ = this->create_wall_timer(
@@ -91,8 +89,6 @@ void SurfelMapNode::declare_parameters() {
     global_frame_ = this->get_parameter("global_frame").as_string();
     sensor_frame_ = this->get_parameter("sensor_frame").as_string();
     publish_rate_ = this->get_parameter("publish_rate").as_double();
-    publish_visualization_ = this->get_parameter("publish_visualization").as_bool();
-    surfel_marker_scale_ = this->get_parameter("surfel_marker_scale").as_double();
 }
 
 SurfelMapConfig SurfelMapNode::load_configuration() {
@@ -155,7 +151,10 @@ void SurfelMapNode::pointcloud_callback(const sensor_msgs::msg::PointCloud2::Sha
     preproc_->process();
     preproc_->get_points_with_normal(pns);    
 
+    // lock map with map mutex - unique_lock blocks other writers AND readers of the shared object
+    std::unique_lock lock(surfel_map_->mutex_);
     size_t integrated = surfel_map_->integrate_points(pns, tf);
+    lock.unlock();
 
     const auto te = std::chrono::high_resolution_clock::now();
     double telaps = std::chrono::duration<double, std::milli>(te - ts).count();

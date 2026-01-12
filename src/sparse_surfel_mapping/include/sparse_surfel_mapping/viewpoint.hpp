@@ -2,6 +2,7 @@
 #define VIEWPOINT_HPP_
 
 
+
 class Viewpoint {
 public:
 

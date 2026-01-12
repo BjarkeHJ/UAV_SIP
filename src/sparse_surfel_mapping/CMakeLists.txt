@@ -58,6 +58,8 @@ add_executable(
   src/surfel_map.cpp
   src/surfel_map_node.cpp
 
+  src/planner_node.cpp
+
 )
 
 ament_target_dependencies(

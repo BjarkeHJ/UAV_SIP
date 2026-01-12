@@ -3,6 +3,9 @@
 
 #include <chrono>
 #include <map>
+// #include <mutex>
+#include <shared_mutex>
+
 #include "sparse_surfel_mapping/spatial_hash.hpp"
 
 namespace sparse_surfel_map {
@@ -59,6 +62,8 @@ public:
     double last_commit_time_ms() const { return last_commit_time_ms_; }
     double last_update_time_ms() const { return last_association_time_ms_ + last_commit_time_ms_; }
 
+    mutable std::shared_mutex mutex_; // mutex for map usage across multiple nodes (mapper + planner)
+
 private:
     using Clock = std::chrono::high_resolution_clock;
     using PendingUpdateMap = std::map<VoxelKey, std::vector<PointWithNormal>>; // queued updates (phase 1)
@@ -76,6 +81,7 @@ private:
     double last_update_time_ms_{0.0};
 
     bool update_in_progress_{false};
+
 };
 
 } // namespace

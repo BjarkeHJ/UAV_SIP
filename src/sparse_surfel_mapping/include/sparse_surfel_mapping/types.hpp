@@ -107,7 +107,6 @@ struct MapStatistics {
     Eigen::Vector3f max_bound{Eigen::Vector3f::Constant(std::numeric_limits<float>::lowest())};
 };
 
-
 /* Constants */
 namespace constants {
     constexpr float EPSILON = 1e-6f;

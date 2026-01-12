@@ -3,12 +3,10 @@
 
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
-#include <nav_msgs/msg/path.hpp>
 #include <visualization_msgs/msg/marker_array.hpp>
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
 #include <tf2_eigen/tf2_eigen.hpp>
-
 #include <pcl_conversions/pcl_conversions.h>
 
 #include "sparse_surfel_mapping/preprocess.hpp"
@@ -19,6 +17,10 @@ namespace sparse_surfel_map {
 class SurfelMapNode : public rclcpp::Node {
 public:
     explicit SurfelMapNode(const rclcpp::NodeOptions& options = rclcpp::NodeOptions());
+
+    // accessor for cross-node usage    
+    SurfelMap* get_surfel_map() { return surfel_map_.get(); }
+    const SurfelMap* get_surfel_map() const { return surfel_map_.get(); }
 
 private:
     void declare_parameters();
@@ -40,7 +42,6 @@ private:
 
     // pubs
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr surfel_marker_pub_;
-    rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr path_pub_;
 
     // subs
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr cloud_sub_;
