@@ -112,7 +112,6 @@ struct MapStatistics {
 namespace constants {
     constexpr float EPSILON = 1e-6f;
     constexpr float MAX_EVAL = 5.0f;
-
 };
 
 

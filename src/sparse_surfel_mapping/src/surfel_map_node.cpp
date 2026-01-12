@@ -23,6 +23,8 @@ SurfelMapNode::SurfelMapNode(const rclcpp::NodeOptions& options) : Node("surfel_
     );
     
     // Surfel viz
+    path_pub_ = this->create_publisher<nav_msgs::msg::Path>("surfel_planner/path", 10);
+
     surfel_marker_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("surfel_map/markers", 10);
     if (publish_rate_ > 0.0) {
         viz_timer_ = this->create_wall_timer(

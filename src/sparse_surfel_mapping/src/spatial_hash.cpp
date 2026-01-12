@@ -98,7 +98,6 @@ std::vector<VoxelKey> SpatialHash::get_valid_surfel_keys() const {
 }
 
 // bulk ops
-
 void SpatialHash::clear() {
     voxels_.clear();
 }
