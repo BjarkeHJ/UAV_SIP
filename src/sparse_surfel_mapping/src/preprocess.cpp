@@ -332,7 +332,7 @@ void ScanPreprocess::estimate_normals() {
 
 void ScanPreprocess::compute_measurement_weight(PointWithNormal& pn, float normal_norm, float sin_theta) {
     float range = pn.position.norm();
-    constexpr float alpha = 0.1;
+    constexpr float alpha = 0.01;
     float w_range = 1.0f / (1.0f + alpha * range * range);
 
     Eigen::Vector3f view_dir = pn.position.normalized(); // sensor -> point

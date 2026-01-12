@@ -21,8 +21,8 @@ Surfel::Surfel(const SurfelConfig& config) : Surfel() {
     config_ = config;
 }
 
-void Surfel::integrate_point(const Eigen::Vector3f& point, const Eigen::Vector3f& normal, float weight, const Eigen::Vector3f view_direction) {
-    if (weight <= 0.0f) {
+void Surfel::integrate_point(const Eigen::Vector3f& point, const Eigen::Vector3f& normal, float weight) {
+    if (weight <= 0.1f) {
         return;
     }
 
@@ -36,6 +36,10 @@ void Surfel::integrate_point(const Eigen::Vector3f& point, const Eigen::Vector3f
     // Update covariance: w * (x - mean_old) * (x - mean_new)^T
     const Eigen::Vector3f delta2 = point - mean_;
     covariance_ += weight * delta * delta2.transpose();
+
+    // Track measurement normal (for surface orientation)
+    const Eigen::Vector3f n_delta = normal - avg_measurement_normal_;
+    avg_measurement_normal_ += (weight / sum_weights_) * n_delta;
 
     eigen_dirty_ = true;
 }
@@ -58,7 +62,7 @@ void Surfel::reset() {
     eigen_dirty_ = true;
 }
 
-void Surfel::recompute_normal(const Eigen::Vector3f& force_orientation) {
+void Surfel::recompute_normal() {
     if (count_ < config_.min_points_for_validity || sum_weights_ < constants::EPSILON) {
         is_valid_ = false;
         return;
@@ -68,10 +72,8 @@ void Surfel::recompute_normal(const Eigen::Vector3f& force_orientation) {
     compute_eigen_decomp();
 
     normal_ = eigenvectors_.col(0);
-    if (force_orientation.squaredNorm() > constants::EPSILON) {
-        if (normal_.dot(force_orientation) < 0 ) {
-            normal_ = -normal_;
-        }
+    if (normal_.dot(avg_measurement_normal_) < 0) {
+        normal_ = -normal_;
     }
 
     // check validity of surfel
@@ -119,6 +121,10 @@ void Surfel::update_validity() {
     int non_zero_count = 0;
     for (int i = 0; i < 3; ++i) {
         if (eigenvalues_(i) > constants::EPSILON) non_zero_count++;
+        if (eigenvalues_(i) > constants::MAX_EVAL) {
+            is_valid_ = false;
+            return;
+        }
     }
     if (non_zero_count < 2) {
         is_valid_ = false;

@@ -18,12 +18,11 @@ public:
 
     void integrate_point(const Eigen::Vector3f& point, 
                          const Eigen::Vector3f& normal, 
-                         float weight = 1.0f, 
-                         const Eigen::Vector3f view_direction = Eigen::Vector3f::Zero());
+                         float weight = 1.0f);
     
     void integrate_points(const std::vector<PointWithNormal>& points);
     void reset();
-    void recompute_normal(const Eigen::Vector3f& force_orientation = Eigen::Vector3f::Zero());
+    void recompute_normal();
 
     bool needs_eigen_update() const { return eigen_dirty_; }
     bool is_valid() const { return is_valid_; }
@@ -59,6 +58,9 @@ private:
     Eigen::Vector3f normal_{Eigen::Vector3f::Zero()};
     Eigen::Vector3f eigenvalues_{Eigen::Vector3f::Zero()};
     Eigen::Matrix3f eigenvectors_{Eigen::Matrix3f::Zero()};
+
+    // View direction
+    Eigen::Vector3f avg_measurement_normal_{Eigen::Vector3f::Zero()};
 
     // State flags
     bool is_valid_{false};
