@@ -1,4 +1,4 @@
-#include "sparse_surfel_mapping/preprocess.hpp"
+#include "sparse_surfel_mapping/mapper/preprocess.hpp"
 
 namespace sparse_surfel_map {
 
@@ -87,10 +87,10 @@ void ScanPreprocess::grid_downsample() {
         const float pitch = std::atan2(pv.z(), xy_dist); // atan(z / sqrt(x² + y²))
         if (yaw < yaw_min_ || yaw > yaw_max_ || pitch < pitch_min_ || pitch > pitch_max_) continue;
 
-        const int u = static_cast<int>((yaw - yaw_min_) * yaw_scale_ / ds_ + 0.5f);
-        const int v = static_cast<int>((pitch - pitch_min_) * pitch_scale_ / ds_ + 0.5f);
+        const size_t u = static_cast<size_t>((yaw - yaw_min_) * yaw_scale_ / ds_ + 0.5f);
+        const size_t v = static_cast<size_t>((pitch - pitch_min_) * pitch_scale_ / ds_ + 0.5f);
 
-        if (u < 0 || u >= W_ || v < 0 || v >= H_) continue;
+        if (u >= W_ || v >= H_) continue;
 
         GridCell& cell = grid_ds_[idx(u,v)];
 
@@ -129,11 +129,11 @@ void ScanPreprocess::smooth_range_image() {
     const float inv_2sigma_sp_sq = 1.0f / (2.0f * spatial_sigma * spatial_sigma);
     const float inv_2sigma_dp_sq = 1.0f / (2.0f * depth_sigma * depth_sigma);
 
-    const int kernel_size = 2 * R + 1;
+    const size_t kernel_size = 2 * R + 1;
     std::vector<float> spatial_kernel(kernel_size);
     
     // precompute spatial kernel (gaussian-ish)
-    for (int i=0; i<kernel_size; ++i) {
+    for (size_t i=0; i<kernel_size; ++i) {
         const float d = float(i - R);
         spatial_kernel[i] = std::exp(-d * d * inv_2sigma_sp_sq);
     }
@@ -143,11 +143,11 @@ void ScanPreprocess::smooth_range_image() {
     std::vector<float>* src = &range_img_smooth_;
     std::vector<float>* dst = &temp;
 
-    for (int iter=0; iter < config_.range_smooth_iters; ++iter) {
+    for (size_t iter=0; iter < config_.range_smooth_iters; ++iter) {
         // horizontal pass
-        for (int v = 0; v < H_; ++v) {
-            for (int u = 0; u < W_; ++u) {
-                const int idx_c = idx(u, v);
+        for (size_t v = 0; v < H_; ++v) {
+            for (size_t u = 0; u < W_; ++u) {
+                const size_t idx_c = idx(u, v);
                 const float r_center = (*src)[idx_c];
 
                 if (!std::isfinite(r_center)) {
@@ -158,10 +158,10 @@ void ScanPreprocess::smooth_range_image() {
                 float weight_sum = 0.0f;
                 float value_sum = 0.0f;
                 
-                const int u_min = std::max<size_t>(0, u - R);
-                const int u_max = std::min(W_ - 1, u + R);
+                const size_t u_min = std::max<size_t>(0, u - R);
+                const size_t u_max = std::min(W_ - 1, u + R);
 
-                for (int uu = u_min; uu <= u_max; ++uu) {
+                for (size_t uu = u_min; uu <= u_max; ++uu) {
                     const float r = (*src)[idx(uu, v)];
                     if (!std::isfinite(r)) continue;
 
@@ -184,12 +184,12 @@ void ScanPreprocess::smooth_range_image() {
         std::swap(src, dst);
 
         // vertical pass
-        for (int v = 0; v < H_; ++v) {
-            const int v_min = std::max<size_t>(0, v - R);
-            const int v_max = std::min(H_ - 1, v + R);
+        for (size_t v = 0; v < H_; ++v) {
+            const size_t v_min = std::max<size_t>(0, v - R);
+            const size_t v_max = std::min(H_ - 1, v + R);
 
-            for (int u = 0; u < W_; ++u) {
-                const int idx_c = idx(u, v);
+            for (size_t u = 0; u < W_; ++u) {
+                const size_t idx_c = idx(u, v);
                 const float r_center = (*src)[idx_c];
                 
                 if (!std::isfinite(r_center)) {
@@ -200,7 +200,7 @@ void ScanPreprocess::smooth_range_image() {
                 float weight_sum = 0.0f;
                 float value_sum = 0.0f;
 
-                for (int vv = v_min; vv <= v_max; ++vv) {
+                for (size_t vv = v_min; vv <= v_max; ++vv) {
                     const float r = (*src)[idx(u, vv)];
                     if (!std::isfinite(r)) continue;
 
@@ -235,28 +235,24 @@ void ScanPreprocess::estimate_normals() {
     // use smoothed if enabled
     const std::vector<float>& range_to_use = (config_.range_smooth_iters > 0) ? range_img_smooth_ : range_img_;
 
-    for (int v = 0; v < H_; ++v) {
-        for (int u = 0; u < W_; ++u) {
-            const int idx_c = idx(u, v);
+    for (size_t v = 0; v < H_; ++v) {
+        for (size_t u = 0; u < W_; ++u) {
+            const size_t idx_c = idx(u, v);
             const GridCell& center = grid_ds_[idx_c];
 
             if (!center.valid) continue;
 
-            // pcl::Normal n;
-            // n.normal_x = n.normal_y = n.normal_z = std::numeric_limits<float>::quiet_NaN();
-
-            Eigen::Vector3f n = Eigen::Vector3f::Constant(std::numeric_limits<float>::quiet_NaN());
             const Eigen::Vector3f& Pc = center.point;
 
             const float rc = range_to_use[idx_c];
 
             // fetch nb function
-            auto fetch_nb = [&](int du, int dv) -> std::pair<bool, Eigen::Vector3f> {
-                const int uu = u + du;
-                const int vv = v + dv;
-                if (uu < 0 || uu >= W_ || vv < 0 || vv >= H_) return {false, {}};
+            auto fetch_nb = [&](size_t du, size_t dv) -> std::pair<bool, Eigen::Vector3f> {
+                const size_t uu = u + du;
+                const size_t vv = v + dv;
+                if (uu >= W_ || vv >= H_) return {false, {}};
 
-                const int idx_n = idx(uu, vv);
+                const size_t idx_n = idx(uu, vv);
                 if (!grid_ds_[idx_n].valid) return {false, {}};
 
                 const float rn = range_to_use[idx_n];
@@ -324,13 +320,13 @@ void ScanPreprocess::estimate_normals() {
             pn.position = Pc;
             pn.normal = normal;
             pn.weight = 0.0f; // TODO
-            compute_measurement_weight(pn, norm, sin_theta);
+            compute_measurement_weight(pn, sin_theta);
             points_with_normal_out_.push_back(pn);
         }
     }
 }
 
-void ScanPreprocess::compute_measurement_weight(PointWithNormal& pn, float normal_norm, float sin_theta) {
+void ScanPreprocess::compute_measurement_weight(PointWithNormal& pn, float sin_theta) {
     float range = pn.position.norm();
     constexpr float alpha = 0.01;
     float w_range = 1.0f / (1.0f + alpha * range * range);

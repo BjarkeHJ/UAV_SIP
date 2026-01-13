@@ -9,8 +9,8 @@
 #include <tf2_eigen/tf2_eigen.hpp>
 #include <pcl_conversions/pcl_conversions.h>
 
-#include "sparse_surfel_mapping/preprocess.hpp"
-#include "sparse_surfel_mapping/surfel_map.hpp"
+#include "sparse_surfel_mapping/mapper/preprocess.hpp"
+#include "sparse_surfel_mapping/mapper/surfel_map.hpp"
 
 namespace sparse_surfel_map {
 

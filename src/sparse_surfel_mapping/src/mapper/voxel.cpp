@@ -1,4 +1,4 @@
-#include "sparse_surfel_mapping/voxel.hpp"
+#include "sparse_surfel_mapping/mapper/voxel.hpp"
 
 namespace sparse_surfel_map {
 

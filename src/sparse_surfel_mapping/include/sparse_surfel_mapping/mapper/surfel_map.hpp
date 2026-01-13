@@ -6,7 +6,7 @@
 // #include <mutex>
 #include <shared_mutex>
 
-#include "sparse_surfel_mapping/spatial_hash.hpp"
+#include "sparse_surfel_mapping/mapper/spatial_hash.hpp"
 
 namespace sparse_surfel_map {
 

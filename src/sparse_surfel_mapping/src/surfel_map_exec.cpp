@@ -1,5 +1,5 @@
-#include "sparse_surfel_mapping/surfel_map_node.hpp"
-#include "sparse_surfel_mapping/planner_node.hpp"
+#include "sparse_surfel_mapping/ros_nodes/surfel_map_node.hpp"
+#include "sparse_surfel_mapping/ros_nodes/planner_node.hpp"
 
 using namespace sparse_surfel_map;
 

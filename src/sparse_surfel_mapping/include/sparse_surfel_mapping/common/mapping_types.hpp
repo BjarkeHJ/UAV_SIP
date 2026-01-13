@@ -1,5 +1,5 @@
-#ifndef TYPES_HPP_
-#define TYPES_HPP_
+#ifndef MAPPING_TYPES_HPP_
+#define MAPPING_TYPES_HPP_
 
 #include <Eigen/Core>
 #include <Eigen/Geometry>

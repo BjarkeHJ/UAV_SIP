@@ -1,4 +1,4 @@
-#include "sparse_surfel_mapping/spatial_hash.hpp"
+#include "sparse_surfel_mapping/mapper/spatial_hash.hpp"
 
 namespace sparse_surfel_map {
 
@@ -163,6 +163,8 @@ MapStatistics SpatialHash::compute_statistics() const {
         stats.min_bound = stats.min_bound.cwiseMin(center); // min coeffs between current min_bound and center
         stats.max_bound = stats.max_bound.cwiseMax(center); // max
     }
+
+    return stats;
 }
 
 // Neighbor queries

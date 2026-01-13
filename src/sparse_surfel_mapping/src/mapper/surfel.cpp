@@ -1,4 +1,4 @@
-#include "sparse_surfel_mapping/surfel.hpp"
+#include "sparse_surfel_mapping/mapper/surfel.hpp"
 #include <cmath>
 #include <algorithm>
 
@@ -27,7 +27,6 @@ void Surfel::integrate_point(const Eigen::Vector3f& point, const Eigen::Vector3f
     }
 
     count_++;
-    const float prev_sum_weight = sum_weights_;
     sum_weights_ += weight;
 
     const Eigen::Vector3f delta = point - mean_;

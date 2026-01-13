@@ -1,4 +1,4 @@
-#include "sparse_surfel_mapping/surfel_map.hpp"
+#include "sparse_surfel_mapping/mapper/surfel_map.hpp"
 #include <cmath>
 
 namespace sparse_surfel_map {

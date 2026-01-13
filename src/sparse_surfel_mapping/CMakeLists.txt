@@ -51,14 +51,15 @@ set(
 add_executable(
   surfel_mapping_node
   src/surfel_map_exec.cpp
-  src/preprocess.cpp
-  src/surfel.cpp
-  src/voxel.cpp
-  src/spatial_hash.cpp
-  src/surfel_map.cpp
-  src/surfel_map_node.cpp
 
-  src/planner_node.cpp
+  src/mapper/preprocess.cpp
+  src/mapper/surfel.cpp
+  src/mapper/voxel.cpp
+  src/mapper/spatial_hash.cpp
+  src/mapper/surfel_map.cpp
+
+  src/ros_nodes/surfel_map_node.cpp
+  src/ros_nodes/planner_node.cpp
 
 )
 

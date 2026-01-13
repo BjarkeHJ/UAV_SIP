@@ -1,4 +1,4 @@
-#include "sparse_surfel_mapping/surfel_map_node.hpp"
+#include "sparse_surfel_mapping/ros_nodes/surfel_map_node.hpp"
 
 namespace sparse_surfel_map {
 
@@ -71,7 +71,7 @@ void SurfelMapNode::declare_parameters() {
     this->declare_parameter("initial_bucket_count", 10000);
 
     // Surfel
-    this->declare_parameter("min_points_per_surfel", 10);
+    this->declare_parameter("min_points_per_surfel", 50);
     this->declare_parameter("planarity_threshold", 0.01);
     this->declare_parameter("scale_threshold", 0.01);
     this->declare_parameter("degeneracy_threshold", 0.1);

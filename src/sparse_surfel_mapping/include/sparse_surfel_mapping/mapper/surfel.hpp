@@ -2,7 +2,7 @@
 #define SURFEL_HPP_
 
 #include <Eigen/Eigenvalues>
-#include "sparse_surfel_mapping/types.hpp"
+#include "sparse_surfel_mapping/common/mapping_types.hpp"
 
 namespace sparse_surfel_map {
 

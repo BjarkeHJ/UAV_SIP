@@ -1,7 +1,7 @@
 #ifndef SPATIAL_HASH_HPP_
 #define SPATIAL_HASH_HPP_
 
-#include "sparse_surfel_mapping/voxel.hpp"
+#include "sparse_surfel_mapping/mapper/voxel.hpp"
 #include <unordered_map>
 #include <vector>
 #include <optional>

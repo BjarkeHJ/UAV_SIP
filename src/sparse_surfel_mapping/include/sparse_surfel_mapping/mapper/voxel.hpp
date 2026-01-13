@@ -1,7 +1,7 @@
 #ifndef VOXEL_HPP_
 #define VOXEL_HPP_
 
-#include "sparse_surfel_mapping/surfel.hpp"
+#include "sparse_surfel_mapping/mapper/surfel.hpp"
 #include <memory>
 
 namespace sparse_surfel_map {

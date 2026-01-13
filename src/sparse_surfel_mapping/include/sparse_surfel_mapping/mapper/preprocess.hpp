@@ -1,7 +1,7 @@
 #ifndef PREPROCESS_HPP_
 #define PREPROCESS_HPP_
 
-#include "sparse_surfel_mapping/types.hpp"
+#include "sparse_surfel_mapping/common/mapping_types.hpp"
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
 
@@ -43,7 +43,7 @@ private:
     void smooth_range_image();
     void estimate_normals();
 
-    void compute_measurement_weight(PointWithNormal& pn, float normal_norm, float sin_theta);
+    void compute_measurement_weight(PointWithNormal& pn, float sin_theta);
 
     // Eigen::Transform<float, 3, Eigen::Isometry> tf_;
     Eigen::Vector3f gnd_normal_z_{Eigen::Vector3f::Zero()};
