@@ -96,8 +96,9 @@ bool InspectionPlanner::plan() {
         return true;
     }
 
-    std::cout << "Current Pos: " << current_position_.x() << " " << current_position_.y() << " " << current_position_.z() << std::endl;
     std::vector<Viewpoint> candidates = viewpoint_generator_.generate_from_seed(current_position_, current_yaw_);
+
+    std::cout << "[DEBUG] Candidates size: " << candidates.size() << std::endl;
 
     if (candidates.empty()) {
         if (config_.debug_output) {
@@ -120,6 +121,7 @@ bool InspectionPlanner::plan() {
     Eigen::Vector3f path_start = current_position_;
     for (auto& vp : candidates) {
         bool path_valid = collision_checker_.is_path_collision_free(path_start, vp.position());
+        path_valid = true;
 
         if (path_valid) {
             vp.set_status(ViewpointStatus::PLANNED);
@@ -167,7 +169,7 @@ bool InspectionPlanner::plan() {
     planner_state_ = PlannerState::EXECUTING;
 
     if (config_.debug_output) {
-        std::cout << "[InspectionPlanner] Planner " << planned_viewpoints_.size()
+        std::cout << "[InspectionPlanner] Planned " << planned_viewpoints_.size()
                   << " viewpoints in " << std::fixed << std::setprecision(2)
                   << last_plan_time_ms_ << " ms" << std::endl;
     }
@@ -191,7 +193,7 @@ void InspectionPlanner::mark_target_reached() {
     total_viewpoints_visited_++;
 
     if (config_.debug_output) {
-        std::cout << "[InspectionPlanner] Viewpoint " << reached.id() << " reached." << std::endl;
+        std::cout << "[InspectionPlanner] Viewpoint w. ID: " << reached.id() << " reached." << std::endl;
         std::cout << "  Observed: " << reached.num_visible() << " surfels" << std::endl;
         std::cout << "  Coverage: " << std::fixed << std::setprecision(1) << coverage_tracker_.coverage_ratio() * 100.0f << "%" << std::endl;
     }

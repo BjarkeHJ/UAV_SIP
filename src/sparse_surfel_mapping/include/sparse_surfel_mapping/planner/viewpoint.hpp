@@ -1,6 +1,8 @@
 #ifndef VIEWPOINT_HPP_
 #define VIEWPOINT_HPP_
 
+#include <iostream>
+
 #include "sparse_surfel_mapping/common/planning_types.hpp"
 #include "sparse_surfel_mapping/mapper/surfel_map.hpp"
 
@@ -14,7 +16,7 @@ public:
     FrustumPlanes compute_frustum(const Eigen::Vector3f& position, float yaw) const;
     bool is_point_visible(const FrustumPlanes& frustum, const Eigen::Vector3f& point) const;
     bool is_voxel_visible(const FrustumPlanes& frustum, const Eigen::Vector3f& voxel_min, const Eigen::Vector3f& voxel_max) const;
-    bool is_surfel_visible(const FrustumPlanes& frustum, const Eigen::Vector3f& camera_position, const Eigen::Vector3f& surfel_position, const Eigen::Vector3f& surfel_normal) const;
+    bool is_surfel_visible(const FrustumPlanes& frustum, const Eigen::Vector3f& camera_position, float yaw, const Eigen::Vector3f& surfel_position, const Eigen::Vector3f& surfel_normal) const;
 
 private:
     void precompute();

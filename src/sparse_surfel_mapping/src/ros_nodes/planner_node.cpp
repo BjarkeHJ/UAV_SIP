@@ -38,7 +38,7 @@ void InspectionPlannerNode::declare_parameters() {
     this->declare_parameter("drone_frame", "base_link");
     
     // Rates
-    this->declare_parameter("planner_rate", 2.0);
+    this->declare_parameter("planner_rate", 1.0);
     
     // Target threshold
     this->declare_parameter("target_reach_th", 0.5);
@@ -83,8 +83,7 @@ InspectionPlannerConfig InspectionPlannerNode::load_configuration() {
 void InspectionPlannerNode::planner_timer_callback() {
     if (!is_active_ || !map_) return;
 
-    auto timestamp = this->get_clock()->now();
-    if (!get_current_pose(current_position_, current_yaw_, timestamp)) {
+    if (!get_current_pose(current_position_, current_yaw_)) {
         if (!received_first_pose_) {
             RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "Waiting for drone pose...");
             return;
@@ -111,6 +110,7 @@ void InspectionPlannerNode::planner_timer_callback() {
 
     if (planner_->needs_replan()) {
         RCLCPP_INFO(this->get_logger(), "Replanning...");
+
         if (planner_->plan()) {
             publish_path();    
         }
@@ -118,13 +118,15 @@ void InspectionPlannerNode::planner_timer_callback() {
             RCLCPP_WARN(this->get_logger(), "Planning failed");
         }
     }
+    else {
+        RCLCPP_INFO(this->get_logger(), "Executing Path...");
+    }
     
     lock.unlock(); // unlock map
 }
 
-bool InspectionPlannerNode::get_current_pose(Eigen::Vector3f& position, float& yaw, rclcpp::Time& stamp) {
+bool InspectionPlannerNode::get_current_pose(Eigen::Vector3f& position, float& yaw) {
     try {
-        // auto transform = tf_buffer_->lookupTransform(global_frame_, drone_frame_, stamp, rclcpp::Duration::from_seconds(0.1));
         auto transform = tf_buffer_->lookupTransform(global_frame_, drone_frame_, tf2::TimePointZero);
         position.x() = transform.transform.translation.x;
         position.y() = transform.transform.translation.y;
@@ -167,7 +169,31 @@ bool InspectionPlannerNode::has_reached_target() {
 }
 
 void InspectionPlannerNode::publish_path() {
-    return;
+    const auto& path = planner_->get_current_path();
+    std::cout << "[PublishPath] Path Lenght: " << path.size() << std::endl;
+    if (!path.is_valid) return;
+
+    nav_msgs::msg::Path msg;
+    msg.header.frame_id = global_frame_;
+    msg.header.stamp = this->get_clock()->now();
+
+    for (size_t i = 0; i < path.waypoints.size(); ++i) {
+        geometry_msgs::msg::PoseStamped pose;
+        pose.header = msg.header;
+        pose.pose.position.x = path.waypoints[i].x();
+        pose.pose.position.y = path.waypoints[i].y();
+        pose.pose.position.z = path.waypoints[i].z();
+
+        if (i < path.yaw_angles.size()) {
+            tf2::Quaternion q;
+            q.setRPY(0, 0, path.yaw_angles[i]);
+            pose.pose.orientation = tf2::toMsg(q);
+        }
+
+        msg.poses.push_back(pose);
+    }
+
+    path_pub_->publish(msg);
 }
 
 

@@ -1,6 +1,8 @@
 #ifndef PLANNING_TYPES_HPP_
 #define PLANNING_TYPES_HPP_
 
+#include <iostream>
+
 #include <Eigen/Core>
 #include <Eigen/Geometry>
 #include <cstdint>
@@ -17,14 +19,14 @@ struct CameraConfig {
     float hfov_deg{90.0f};
     float vfov_deg{60.0f};
 
-    float min_range{0.25f};
-    float max_range{8.0f};
+    float min_range{0.1f};
+    float max_range{10.0f};
 
     // Ray sample resolution for coverage tracking
     size_t h_samples{16};
     size_t v_samples{12};
 
-    float max_incidence_angle_deg{45.0f};  
+    float max_incidence_angle_deg{90.0f};  
 };
 
 struct CollisionConfig {
@@ -55,7 +57,7 @@ struct ViewpointConfig {
     // Region growing parameters
     size_t growth_steps{3};
     size_t max_viewpoints_per_steps{8};
-    size_t max_total_viewpoints{50};
+    size_t max_total_viewpoints{10000};
 
     // Frontier clustering
     float frontier_cluster_radius{1.0f};
@@ -84,7 +86,7 @@ struct InspectionPlannerConfig {
     ViewpointConfig viewpoint;
 
     // Planning strategy
-    size_t max_viewpoints_per_plan{5};
+    size_t max_viewpoints_per_plan{10};
     float replan_distance_th{1.0f};
     float replan_coverage_th{0.1f};
 
@@ -141,6 +143,7 @@ struct FrustumPlanes {
     bool contains_point(const Eigen::Vector3f& point) const {
         for (const auto& plane : planes) {
             float dist = plane.head<3>().dot(point) + plane.w();
+            std::cout << dist << std::endl;
             if (dist < 0) return false;
         }
 

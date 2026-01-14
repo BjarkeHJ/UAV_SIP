@@ -30,7 +30,6 @@ void ViewpointGenerator::set_map(const SurfelMap* map) {
 }
 
 std::vector<Viewpoint> ViewpointGenerator::generate_from_seed(const Eigen::Vector3f& seed_position, float seed_yaw) {
-
     auto t_start = std::chrono::high_resolution_clock::now();
     std::vector<Viewpoint> result;
     if (!map_) return  result;
@@ -51,7 +50,7 @@ std::vector<Viewpoint> ViewpointGenerator::generate_from_seed(const Eigen::Vecto
     // Create seed viewpoint from position and yaw
     Viewpoint seed_vp(seed_position, seed_yaw, config_.camera);
     seed_vp.set_id(generate_id());
-    seed_vp.compute_visibility(*map_, false);
+    seed_vp.compute_visibility(*map_, true);
     seed_vp.compute_coverage_score(already_covered, vp_config);
 
     if (seed_vp.num_visible() > 0 && seed_vp.coverage_score() >= vp_config.min_overlap_ratio) {
@@ -205,7 +204,7 @@ Viewpoint ViewpointGenerator::generate_viewpoint_for_cluster(const FrontierClust
 
     // try suggested position
     if (is_position_valid(cluster.suggested_view_position)) {
-        vp.compute_visibility(*map_, false);
+        vp.compute_visibility(*map_, true);
         if (vp.num_visible() > 0) {
             score_viewpoint(vp, already_covered, cluster);
             return vp; // accepted
@@ -246,7 +245,7 @@ Viewpoint ViewpointGenerator::generate_viewpoint_for_cluster(const FrontierClust
 
             Viewpoint test_vp(pos, yaw, config_.camera);
             test_vp.set_id(generate_id());
-            test_vp.compute_visibility(*map_, false);
+            test_vp.compute_visibility(*map_, true);
 
             if (test_vp.num_visible() > vp.num_visible()) {
                 vp = std::move(test_vp);
@@ -508,7 +507,7 @@ std::vector<Viewpoint> ViewpointGenerator::generate_for_features(const std::vect
 
         Viewpoint vp(view_pos, yaw, config_.camera);
         vp.set_id(generate_id());
-        vp.compute_visibility(*map_, false);
+        vp.compute_visibility(*map_, true);
         vp.compute_coverage_score(current_coverage, vp_config);
 
         if (vp.num_visible() > 0 && vp.coverage_score() >= vp_config.min_overlap_ratio * 0.5f) {

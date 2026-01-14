@@ -3,9 +3,11 @@
 
 #include <rclcpp/rclcpp.hpp>
 #include <nav_msgs/msg/path.hpp>
+#include <geometry_msgs/msg/pose_stamped.hpp>
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
 #include <tf2_eigen/tf2_eigen.hpp>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
 #include "sparse_surfel_mapping/mapper/surfel_map.hpp"
 #include "sparse_surfel_mapping/planner/inspection_planner.hpp"
@@ -23,7 +25,7 @@ private:
 
     void planner_timer_callback();
 
-    bool get_current_pose(Eigen::Vector3f& position, float& yaw, rclcpp::Time& stamp);
+    bool get_current_pose(Eigen::Vector3f& position, float& yaw);
     bool has_reached_target();
 
     void publish_path();

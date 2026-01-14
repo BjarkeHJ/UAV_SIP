@@ -113,15 +113,24 @@ bool FrustumCalculator::is_voxel_visible(const FrustumPlanes& frustum, const Eig
     return true;
 }
 
-bool FrustumCalculator::is_surfel_visible(const FrustumPlanes& frustum, const Eigen::Vector3f& camera_position, const Eigen::Vector3f& surfel_position, const Eigen::Vector3f& surfel_normal) const {
-    if (!frustum.contains_point(surfel_position)) return false;
-
-    const Eigen::Vector3f view_dir = (camera_position - surfel_position).normalized();
-    const float cos_angle = surfel_normal.dot(view_dir);
-
-    const float cos_th = std::cos(config_.max_incidence_angle_deg * M_PI / 180.0f);
+bool FrustumCalculator::is_surfel_visible(const FrustumPlanes& frustum, const Eigen::Vector3f& camera_position,float yaw, const Eigen::Vector3f& surfel_position, const Eigen::Vector3f& surfel_normal) const {
     
-    return cos_angle > cos_th;
+    Eigen::Vector3f to_surfel = surfel_position - camera_position;
+    float distance = to_surfel.norm();
+    if (distance < config_.min_range || distance > config_.max_range) return false;
+
+    Eigen::Vector3f forward(std::cos(yaw), std::sin(yaw), 0.0f);
+    if (forward.dot(to_surfel) < 0) return false;
+    return true;
+   
+    // if (!frustum.contains_point(surfel_position)) return false;
+
+    // const Eigen::Vector3f view_dir = (camera_position - surfel_position).normalized();
+    // const float cos_angle = surfel_normal.dot(view_dir);
+
+    // const float cos_th = std::cos(config_.max_incidence_angle_deg * M_PI / 180.0f);
+    
+    // return cos_angle > cos_th;
 }
 
 // --- VIEWPOINT ---
@@ -131,7 +140,10 @@ Viewpoint::Viewpoint(const Eigen::Vector3f& position, float yaw, const CameraCon
     , frustum_calc_(camera_config)
     , frustum_()
     , frustum_computed_(false)
-{}
+{
+    state_.position = position;
+    state_.yaw = yaw;
+}
 
 size_t Viewpoint::compute_visibility(const SurfelMap& map, bool check_occlusion) {
     if (!frustum_computed_) {
@@ -177,7 +189,7 @@ size_t Viewpoint::compute_visibility(const SurfelMap& map, bool check_occlusion)
                 const Surfel& surfel = voxel.surfel();
                 
                 // Surfel visible?
-                if (frustum_calc_.is_surfel_visible(frustum_, state_.position, surfel.mean(), surfel.normal())) {
+                if (frustum_calc_.is_surfel_visible(frustum_, state_.position, state_.yaw, surfel.mean(), surfel.normal())) {
                     
                     // Optional ray-cast occlusion check 
                     if (check_occlusion) {
