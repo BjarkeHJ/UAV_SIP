@@ -5,8 +5,9 @@ namespace sparse_surfel_map {
 InspectionPlannerNode::InspectionPlannerNode(const rclcpp::NodeOptions& options) : Node("inspection_planner_node", options) {
 
     declare_parameters();
-    // load config and create planner object here
-    
+    // load config and create planner object
+    InspectionPlannerConfig config = load_configuration();
+    planner_ = std::make_unique<InspectionPlanner>(config);
     
     tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
     tf_listener_ = std::make_unique<tf2_ros::TransformListener>(*tf_buffer_);
@@ -23,6 +24,12 @@ InspectionPlannerNode::InspectionPlannerNode(const rclcpp::NodeOptions& options)
     RCLCPP_INFO(this->get_logger(), "Inspection planner node initialized");
     RCLCPP_INFO(this->get_logger(), "  Planning rate: %.2f Hz", planner_rate_); 
 
+}
+
+void InspectionPlannerNode::set_surfel_map(SurfelMap* map) {
+    map_ = map;
+    planner_->initialize(map);
+    RCLCPP_INFO(this->get_logger(), "SurfelMap connected to planner");
 }
 
 void InspectionPlannerNode::declare_parameters() {
@@ -67,21 +74,101 @@ void InspectionPlannerNode::declare_parameters() {
     target_yaw_th_ = this->get_parameter("target_yaw_th").as_double();
 }
 
+InspectionPlannerConfig InspectionPlannerNode::load_configuration() {
+    InspectionPlannerConfig config;
+
+    return config;
+}
+
 void InspectionPlannerNode::planner_timer_callback() {
+    if (!is_active_ || !map_) return;
+
+    auto timestamp = this->get_clock()->now();
+    if (!get_current_pose(current_position_, current_yaw_, timestamp)) {
+        if (!received_first_pose_) {
+            RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "Waiting for drone pose...");
+            return;
+        }
+    }
+    received_first_pose_ = true;
 
     // Lock map whilst reading map (shared_lock blocks only other writers)
     std::shared_lock lock(map_->mutex_);
-    std::cout << "Num valid surfels: " << map_->num_valid_surfels() << std::endl;
+
+    planner_->update_state(current_position_, current_yaw_);
+
+    if (has_reached_target()) {
+        RCLCPP_INFO(this->get_logger(), "Target Reached!");
+        planner_->mark_target_reached();
+    }
+
+    if (planner_->is_inspection_complete()) {
+        RCLCPP_INFO(this->get_logger(), "Inspection complete! Coverage: %.1f%%", planner_->statistics().coverage_ratio * 100.0f);
+        is_active_ = false;
+        lock.unlock();
+        return;
+    }
+
+    if (planner_->needs_replan()) {
+        RCLCPP_INFO(this->get_logger(), "Replanning...");
+        if (planner_->plan()) {
+            publish_path();    
+        }
+        else {
+            RCLCPP_WARN(this->get_logger(), "Planning failed");
+        }
+    }
+    
     lock.unlock(); // unlock map
-
-    // do planning?
-
-    // publish path... 
-
-    return;
 }
 
+bool InspectionPlannerNode::get_current_pose(Eigen::Vector3f& position, float& yaw, rclcpp::Time& stamp) {
+    try {
+        // auto transform = tf_buffer_->lookupTransform(global_frame_, drone_frame_, stamp, rclcpp::Duration::from_seconds(0.1));
+        auto transform = tf_buffer_->lookupTransform(global_frame_, drone_frame_, tf2::TimePointZero);
+        position.x() = transform.transform.translation.x;
+        position.y() = transform.transform.translation.y;
+        position.z() = transform.transform.translation.z;
 
+        tf2::Quaternion q(
+            transform.transform.rotation.x,
+            transform.transform.rotation.y,
+            transform.transform.rotation.z,
+            transform.transform.rotation.w
+        );
+
+        double roll, pitch, yaw_d;
+        tf2::Matrix3x3(q).getRPY(roll, pitch, yaw_d);
+        yaw = static_cast<float>(yaw_d);
+        return true;
+    }
+    catch (const tf2::TransformException& ex) {
+        return false;
+    }
+}
+
+bool InspectionPlannerNode::has_reached_target() {
+    const Viewpoint& target = planner_->get_next_target();
+
+    if (target.num_visible() == 0 && target.id() == 0) {
+        return false;
+    }
+
+    float pos_error = (current_position_ - target.position()).norm();
+    if (pos_error > target_reach_th_) return false;
+
+    float yaw_error = std::abs(current_yaw_ - target.yaw());
+    if (yaw_error > M_PI) {
+        yaw_error = 2.0f * M_PI - yaw_error;
+    }
+    if (yaw_error > target_yaw_th_) return false;
+
+    return true;
+}
+
+void InspectionPlannerNode::publish_path() {
+    return;
+}
 
 
 } // namespace

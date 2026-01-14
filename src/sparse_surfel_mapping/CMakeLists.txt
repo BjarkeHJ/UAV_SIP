@@ -58,6 +58,13 @@ add_executable(
   src/mapper/spatial_hash.cpp
   src/mapper/surfel_map.cpp
 
+  src/planner/viewpoint.cpp
+  src/planner/viewpoint_generator.cpp
+  src/planner/frontier_finder.cpp
+  src/planner/coverage_tracker.cpp
+  src/planner/collision_checker.cpp
+  src/planner/inspection_planner.cpp
+
   src/ros_nodes/surfel_map_node.cpp
   src/ros_nodes/planner_node.cpp
 
