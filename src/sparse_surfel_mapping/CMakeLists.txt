@@ -98,8 +98,8 @@ install(
 # install launch file
 install(
   DIRECTORY
-  launch
-  config
+  # launch
+  # config
   DESTINATION share/${PROJECT_NAME}
 )
 

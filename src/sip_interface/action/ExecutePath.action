@@ -1,10 +1,10 @@
 # Goal
 nav_msgs/Path path
+uint64 plan_id
 float32 pos_tolerance
 float32 yaw_tolerance
 float32 v_max
 float32 a_max
-uint64 plan_id
 ---
 # Result
 bool success

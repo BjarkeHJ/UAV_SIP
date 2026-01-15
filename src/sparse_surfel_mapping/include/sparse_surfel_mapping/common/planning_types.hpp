@@ -16,17 +16,13 @@ namespace sparse_surfel_map {
 using VoxelKeySet = std::unordered_set<VoxelKey, VoxelKeyHash>;
 
 struct CameraConfig {
-    float hfov_deg{90.0f};
-    float vfov_deg{60.0f};
+    float hfov_deg{90.0f}; // half fov for ensure quality (??)
+    float vfov_deg{60.0f}; 
 
     float min_range{0.1f};
     float max_range{10.0f};
 
-    // Ray sample resolution for coverage tracking
-    size_t h_samples{16};
-    size_t v_samples{12};
-
-    float max_incidence_angle_deg{90.0f};  
+    float max_incidence_angle_deg{75.0f};  
 };
 
 struct CollisionConfig {
@@ -49,24 +45,23 @@ struct PathPlannerConfig {
 
 struct ViewpointConfig {
     // Viewpoint Geometry
-    float optimal_view_distance{2.5f};
+    float optimal_view_distance{3.0f};
     float min_view_distance{1.5f};
-    float max_view_distance{4.0f};
-    float max_angle_view_deg{45.0f}; // max grace angle
+    float max_view_distance{5.0f};
 
     // Region growing parameters
-    size_t growth_steps{3};
-    size_t max_viewpoints_per_steps{8};
-    size_t max_total_viewpoints{10000};
+    size_t max_chain_length{10};
+    float max_expansion_radius{3.0f};
 
     // Frontier clustering
-    float frontier_cluster_radius{1.0f};
-    size_t min_cluster_size{3};
+    float frontier_cluster_radius{0.5f};
+    size_t min_cluster_size{5};
 
     // Coverage overlap
     float target_overlap_ratio{0.20f}; // adjacent viewpoints has ~20% surface overlap
     float min_overlap_ratio{0.10f};
     float max_overlap_ratio{0.40f};
+    float min_new_coverage_ratio{0.05f};
 
     // Structural analysis
     bool enable_structural_analysis{true};
@@ -88,7 +83,11 @@ struct InspectionPlannerConfig {
     // Planning strategy
     size_t max_viewpoints_per_plan{10};
     float replan_distance_th{1.0f};
-    float replan_coverage_th{0.1f};
+    float replan_coverage_th{0.25f};
+
+    // Path commitment
+    size_t commit_horizon{2}; // dont replan (unless collision detected)
+    size_t min_horizon_buffer{2};  // extend path trigger if: total_planned - commit_horizon < min_horizon_buffer
 
     // Termination
     float target_coverage_ratio{0.95f};
@@ -104,6 +103,7 @@ struct InspectionPlannerConfig {
 enum class ViewpointStatus {
     CANDIDATE,
     PLANNED,
+    COMMITED,
     ACTIVE,
     VISITED,
     UNREACHABLE,
@@ -143,7 +143,6 @@ struct FrustumPlanes {
     bool contains_point(const Eigen::Vector3f& point) const {
         for (const auto& plane : planes) {
             float dist = plane.head<3>().dot(point) + plane.w();
-            std::cout << dist << std::endl;
             if (dist < 0) return false;
         }
 
@@ -156,6 +155,7 @@ struct FrontierSurfel {
     Eigen::Vector3f position;
     Eigen::Vector3f normal;
 
+    float distance_to_expansion{0.0f};
     size_t uncovered_neighbor_count{0};
     float frontier_score{0.0f};
 
@@ -230,6 +230,31 @@ struct InspectionPath {
     }
 };
 
+enum class PathSafetyStatus {
+    SAFE, // path collision-free
+    COLLISION_COMMITED, // collision in committed segment - EMERGENCY
+    COLLISION_UNCOMMITED, // collision in uncommitted segment - need re-extension
+    INVALID_PATH, // path is invalid or empty
+    NO_MAP // map not available
+};
+
+struct PathEvaluationResult {
+    PathSafetyStatus status{PathSafetyStatus::INVALID_PATH};
+
+    int first_collision_index{-1};
+    Eigen::Vector3f collision_point{Eigen::Vector3f::Zero()};
+    float collision_distance{std::numeric_limits<float>::infinity()};
+    bool collision_in_commited{false};
+    int collision_segment{-1}; // path index of start of collision segment
+    float min_clearence{std::numeric_limits<float>::infinity()};
+    int min_clearence_index{-1};
+
+    bool is_safe() const { return status == PathSafetyStatus::SAFE; }
+    bool need_emergency_stop() const { return status == PathSafetyStatus::COLLISION_COMMITED; }
+    bool needs_reextension() const { return status == PathSafetyStatus::COLLISION_UNCOMMITED; }
+};
+
+
 // A* Node for planning
 struct AStarNode {
     VoxelKey key;
@@ -263,6 +288,9 @@ struct PlanningStatistics {
 
     float total_path_length{0.0f};
     float average_coverage_per_viewpoint{0.0f};
+
+    size_t path_evaluations{0};
+    size_t path_extensions{0};
 };
 
 

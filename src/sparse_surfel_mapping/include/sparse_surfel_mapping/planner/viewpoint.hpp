@@ -25,6 +25,8 @@ private:
     float tan_half_hfov_;
     float tan_half_vfov_;
     float cos_max_angle_;
+    float min_r2_;
+    float max_r2_;
 };
 
 

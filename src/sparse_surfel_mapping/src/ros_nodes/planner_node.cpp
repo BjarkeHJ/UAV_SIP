@@ -1,4 +1,5 @@
 #include "sparse_surfel_mapping/ros_nodes/planner_node.hpp"
+#include <sensor_msgs/point_cloud2_iterator.hpp>
 
 namespace sparse_surfel_map {
 
@@ -6,8 +7,8 @@ InspectionPlannerNode::InspectionPlannerNode(const rclcpp::NodeOptions& options)
 
     declare_parameters();
     // load config and create planner object
-    InspectionPlannerConfig config = load_configuration();
-    planner_ = std::make_unique<InspectionPlanner>(config);
+    config_ = load_configuration();
+    planner_ = std::make_unique<InspectionPlanner>(config_);
     
     tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
     tf_listener_ = std::make_unique<tf2_ros::TransformListener>(*tf_buffer_);
@@ -20,6 +21,12 @@ InspectionPlannerNode::InspectionPlannerNode(const rclcpp::NodeOptions& options)
             std::bind(&InspectionPlannerNode::planner_timer_callback, this)
         );
     }
+
+    fov_cloud_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("inspection_planner/fov_cloud", 10);
+    fov_timer_ = this->create_wall_timer(
+        std::chrono::duration<double>(1.0 / 5.0),
+        std::bind(&InspectionPlannerNode::publish_fov_pointcloud, this)
+    );
 
     RCLCPP_INFO(this->get_logger(), "Inspection planner node initialized");
     RCLCPP_INFO(this->get_logger(), "  Planning rate: %.2f Hz", planner_rate_); 
@@ -110,7 +117,7 @@ void InspectionPlannerNode::planner_timer_callback() {
 
     if (planner_->needs_replan()) {
         RCLCPP_INFO(this->get_logger(), "Replanning...");
-
+        
         if (planner_->plan()) {
             publish_path();    
         }
@@ -170,14 +177,16 @@ bool InspectionPlannerNode::has_reached_target() {
 
 void InspectionPlannerNode::publish_path() {
     const auto& path = planner_->get_current_path();
-    std::cout << "[PublishPath] Path Lenght: " << path.size() << std::endl;
-    if (!path.is_valid) return;
+    if (!path.is_valid) return; // maybe publish empty path?
 
     nav_msgs::msg::Path msg;
     msg.header.frame_id = global_frame_;
     msg.header.stamp = this->get_clock()->now();
 
-    for (size_t i = 0; i < path.waypoints.size(); ++i) {
+    size_t path_length = path.waypoints.size();
+    if (path_length < 2) return;
+
+    for (size_t i = 1; i < path.waypoints.size(); ++i) {
         geometry_msgs::msg::PoseStamped pose;
         pose.header = msg.header;
         pose.pose.position.x = path.waypoints[i].x();
@@ -193,7 +202,90 @@ void InspectionPlannerNode::publish_path() {
         msg.poses.push_back(pose);
     }
 
+    std::cout << "[PublishPath] Path Lenght: " << msg.poses.size() << std::endl;
     path_pub_->publish(msg);
+}
+
+void InspectionPlannerNode::publish_fov_pointcloud() {
+    if (!map_) return;
+
+    // Create a viewpoint at current drone position to compute visibility
+    Viewpoint current_view(current_position_, current_yaw_, config_.camera);
+    
+    // Shared lock for map access
+    std::shared_lock lock(map_->mutex_);
+    
+    // Compute which voxels are visible from current pose
+    // Using occlusion checking for accurate visibility
+    current_view.compute_visibility(*map_, true);
+    
+    lock.unlock();
+
+    const VoxelKeySet& visible_voxels = current_view.visible_voxels();
+    
+    if (visible_voxels.empty()) {
+        return;
+    }
+
+    // Create PointCloud2 message
+    sensor_msgs::msg::PointCloud2 cloud_msg;
+    cloud_msg.header.frame_id = global_frame_;
+    cloud_msg.header.stamp = this->get_clock()->now();
+
+    // Set up point cloud fields (x, y, z, intensity)
+    cloud_msg.height = 1;
+    cloud_msg.width = visible_voxels.size();
+    cloud_msg.is_dense = true;
+    cloud_msg.is_bigendian = false;
+
+    // Define fields
+    sensor_msgs::PointCloud2Modifier modifier(cloud_msg);
+    modifier.setPointCloud2FieldsByString(2, "xyz", "rgb");
+    modifier.resize(visible_voxels.size());
+
+    // Iterators for filling the cloud
+    sensor_msgs::PointCloud2Iterator<float> iter_x(cloud_msg, "x");
+    sensor_msgs::PointCloud2Iterator<float> iter_y(cloud_msg, "y");
+    sensor_msgs::PointCloud2Iterator<float> iter_z(cloud_msg, "z");
+    sensor_msgs::PointCloud2Iterator<uint8_t> iter_r(cloud_msg, "r");
+    sensor_msgs::PointCloud2Iterator<uint8_t> iter_g(cloud_msg, "g");
+    sensor_msgs::PointCloud2Iterator<uint8_t> iter_b(cloud_msg, "b");
+
+    const float voxel_size = map_->voxel_size();
+
+    // Check which voxels have been observed before (for coloring)
+    const VoxelKeySet& observed_voxels = planner_->coverage_tracker().observed_voxels();
+
+    for (const auto& key : visible_voxels) {
+        // Compute voxel center
+        float x = (key.x + 0.5f) * voxel_size;
+        float y = (key.y + 0.5f) * voxel_size;
+        float z = (key.z + 0.5f) * voxel_size;
+
+        *iter_x = x;
+        *iter_y = y;
+        *iter_z = z;
+
+        // Color: Green = new (not yet observed), Yellow = already observed
+        bool already_observed = observed_voxels.count(key) > 0;
+        
+        if (already_observed) {
+            // Yellow - already covered
+            *iter_r = 255;
+            *iter_g = 200;
+            *iter_b = 0;
+        } else {
+            // Green - new coverage
+            *iter_r = 0;
+            *iter_g = 255;
+            *iter_b = 100;
+        }
+
+        ++iter_x; ++iter_y; ++iter_z;
+        ++iter_r; ++iter_g; ++iter_b;
+    }
+
+    fov_cloud_pub_->publish(cloud_msg);
 }
 
 

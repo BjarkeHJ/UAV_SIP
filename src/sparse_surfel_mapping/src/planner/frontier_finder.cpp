@@ -5,152 +5,68 @@ namespace sparse_surfel_map {
 FrontierFinder::FrontierFinder() : map_(nullptr) {}
 FrontierFinder::FrontierFinder(const SurfelMap* map) : map_(map) {}
 
-std::vector<FrontierSurfel> FrontierFinder::find_frontier(const VoxelKeySet& covered_voxels, const Eigen::Vector3f& search_center, float search_radius) const {
+std::vector<FrontierSurfel> FrontierFinder::find_frontiers_from_coverage(const VoxelKeySet& cumulative_coverage, const Eigen::Vector3f& expansion_center, float max_expansion_radius) const {
     
     std::vector<FrontierSurfel> frontiers;
 
-    if (!map_) return frontiers;
+    if (!map_ || cumulative_coverage.empty()) return frontiers;
 
-    const float voxel_size = map_->voxel_size();
-    const int voxel_radius = static_cast<int>(std::ceil(search_radius / voxel_size));
+    const float max_radius_sq = max_expansion_radius * max_expansion_radius;
+    VoxelKeySet checked; // tracked checked neighbors
 
-    const VoxelKey center_key{
-        static_cast<int32_t>(std::floor(search_center.x() / voxel_size)),
-        static_cast<int32_t>(std::floor(search_center.y() / voxel_size)),
-        static_cast<int32_t>(std::floor(search_center.z() / voxel_size))
-    };
+    // Iterate over all covered voxels 
+    for (const auto& covered_key : cumulative_coverage) {
+        for (const auto& nb_key : get_neighbors_6(covered_key)) {
+            if (checked.count(nb_key) > 0) continue;
+            checked.insert(nb_key);
 
-    const float radius_sq = search_radius * search_radius;
+            if (!has_surface(nb_key)) continue; // skip if nb has no surfel
+            if (cumulative_coverage.count(nb_key) > 0) continue; // skip if nb already covered
 
-    for (int dx = -voxel_radius; dx <= voxel_radius; ++dx) {
-        for (int dy = -voxel_radius; dy <= voxel_radius; ++dy) {
-            for (int dz = -voxel_radius; dz <= voxel_radius; ++dz) {
-                VoxelKey key{center_key.x + dx, center_key.y + dy, center_key.z + dz};
-
-                Eigen::Vector3f voxel_center(
-                    (key.x + 0.5) * voxel_size,
-                    (key.y + 0.5) * voxel_size,
-                    (key.z + 0.5) * voxel_size
-                );
-                if ((voxel_center - search_center).squaredNorm() > radius_sq) continue;
-
-                if (!has_surface(key)) continue;
-
-                bool is_covered = covered_voxels.count(key) > 0;
-                size_t uncovered_neighbors = count_uncovered_surface_neighbors(key, covered_voxels);
-
-                bool is_frontier = false;
-
-                if (is_covered && uncovered_neighbors > 0) {
-                    is_frontier = true; // at boundary between covered and uncovered
-                }
-                else if (!is_covered) {
-                    // check face-neighbors
-                    for (const auto& neighbor : get_neighbors_6(key)) {
-                        if (covered_voxels.count(neighbor) > 0 && has_surface(neighbor)) {
-                            is_frontier = true;
-                            break;
-                        }
-                    }
-                }
-
-                if (!is_frontier) continue;
-
-                auto voxel_opt = map_->get_voxel(key);
-                if (!voxel_opt) continue;
-
-                const Surfel& surfel = voxel_opt->get().surfel();
-                FrontierSurfel fs;
-                fs.key = key;
-                fs.position = surfel.mean();
-                fs.normal = surfel.normal();
-                fs.uncovered_neighbor_count = uncovered_neighbors;
-                fs.is_covered = is_covered;
-
-                fs.frontier_score = static_cast<float>(uncovered_neighbors);
-                if (!is_covered) {
-                    fs.frontier_score += 2.0f;
-                }
-
-                frontiers.push_back(fs);
-            }
-        }
-    }
-
-    // Sort by highest frontier score
-    std::sort(frontiers.begin(), frontiers.end(),
-        [](const FrontierSurfel& a, const FrontierSurfel& b) {
-            return a.frontier_score > b.frontier_score;
-        });
-
-    return frontiers;
-}
-
-std::vector<FrontierSurfel> FrontierFinder::find_frontier_around_coverage(const VoxelKeySet& visible_from_viewpoint, const VoxelKeySet& already_covered) const {
-    std::vector<FrontierSurfel> frontiers;
-
-    if (!map_) return frontiers;
-
-    // combine alread covered with what this viewpoint sees
-    VoxelKeySet total_covered = already_covered;
-    for (const auto& key : visible_from_viewpoint) {
-        total_covered.insert(key);
-    }
-
-    VoxelKeySet checked;
-    for (const auto& visible_key : visible_from_viewpoint) {
-        for (const auto& nb : get_neighbors_26(visible_key)) {
-            if (checked.count(nb) > 0) continue;
-            checked.insert(nb);
-
-            if (!has_surface(nb)) continue;
-
-            bool is_covered = total_covered.count(nb) > 0;
-            size_t uncovered_neighbors = count_uncovered_surface_neighbors(nb, total_covered);
-
-            bool is_frontier = false;
-            if (!is_covered) {
-                is_frontier = true;
-            }
-            else if (uncovered_neighbors > 0) {
-                is_frontier = true;
-            }
-
-            if (!is_frontier) continue;
-
-            auto voxel_opt = map_->get_voxel(nb);
+            // This neighbor is a frontier (uncovered surface)
+            auto voxel_opt = map_->get_voxel(nb_key);
             if (!voxel_opt) continue;
 
             const Surfel& surfel = voxel_opt->get().surfel();
+            Eigen::Vector3f position = surfel.mean();
+
+            // Check distance from expansion center
+            float dist_sq = (position - expansion_center).squaredNorm();
+            if (dist_sq > max_radius_sq) continue;
+
+            // Count the number of uncovered surface neighbors the frontier has
+            size_t uncovered_neighbors = count_uncovered_surface_neighbors(nb_key, cumulative_coverage);
 
             FrontierSurfel fs;
-            fs.key = nb;
-            fs.position = surfel.mean();
+            fs.key = nb_key;
+            fs.position = position;
             fs.normal = surfel.normal();
             fs.uncovered_neighbor_count = uncovered_neighbors;
-            fs.is_covered = is_covered;
-
-            fs.frontier_score = static_cast<float>(uncovered_neighbors);
-            if (!is_covered) {
-                fs.frontier_score = 3.0f;
-            }
+            fs.is_covered = false;
+            fs.distance_to_expansion = std::sqrt(dist_sq);
+            fs.frontier_score = static_cast<float>(uncovered_neighbors) + 1.0f;
+            
+            frontiers.push_back(fs);
         }
     }
 
-    std::sort(frontiers.begin(), frontiers.end(),
-        [](const FrontierSurfel& a, const FrontierSurfel& b) {
-            return a.frontier_score > b.frontier_score;
-        });
+    std::sort(frontiers.begin(), frontiers.end(), 
+        [](const FrontierSurfel& a, const FrontierSurfel&b) {
+            return a.distance_to_expansion < b.distance_to_expansion;
+        }
+    );
 
     return frontiers;
 }
 
 std::vector<FrontierCluster> FrontierFinder::cluster_frontiers(const std::vector<FrontierSurfel>& frontiers, float cluster_radius, size_t min_cluster_size) const {
+    
     std::vector<FrontierCluster> clusters;
     if (frontiers.empty()) return clusters;
 
     std::vector<bool> assigned(frontiers.size(), false);
 
+    // greedy clustering: Start from closest frontiers (already sorted by distance to expansion center)
     for (size_t i = 0; i < frontiers.size(); ++i) {
         if (assigned[i]) continue;
 
@@ -158,6 +74,7 @@ std::vector<FrontierCluster> FrontierFinder::cluster_frontiers(const std::vector
         cluster.surfels.push_back(frontiers[i]);
         assigned[i] = true;
         
+        // Add nearby to cluster
         for (size_t j = i + 1; j < frontiers.size(); ++j) {
             if (assigned[j]) continue;
 
@@ -175,6 +92,7 @@ std::vector<FrontierCluster> FrontierFinder::cluster_frontiers(const std::vector
             }
         }
 
+        // Keep reasonably cluster size
         if (cluster.surfels.size() >= min_cluster_size) {
             cluster.compute_centroid();
             clusters.push_back(std::move(cluster));
@@ -196,6 +114,7 @@ void FrontierFinder::compute_cluster_view_suggestion(FrontierCluster& cluster, f
 
     cluster.compute_centroid();
 
+    // Direction along the normal to find where camera will be placed
     Eigen::Vector3f view_direction = cluster.mean_normal;
 
     view_direction.z() *= 0.3f; // reduce vertical component
@@ -205,7 +124,7 @@ void FrontierFinder::compute_cluster_view_suggestion(FrontierCluster& cluster, f
     view_direction.normalize();
 
     cluster.suggested_view_position = cluster.centroid + view_direction * optimal_distance;
-    Eigen::Vector3f look_dir = cluster.centroid - cluster.suggested_view_position;
+    Eigen::Vector3f look_dir = cluster.centroid - cluster.suggested_view_position; // view_position -> centroid
     cluster.suggested_yaw = std::atan2(look_dir.y(), look_dir.x());
 }
 
@@ -250,6 +169,17 @@ bool FrontierFinder::has_surface(const VoxelKey& key) const {
     if (!map_) return false;
     auto voxel_opt = map_->get_voxel(key);
     return voxel_opt && voxel_opt->get().has_valid_surfel();
+}
+
+Eigen::Vector3f FrontierFinder::key_to_position(const VoxelKey& key) const {
+    if (!map_) return Eigen::Vector3f::Zero();
+
+    const float voxel_size = map_->voxel_size();
+    return Eigen::Vector3f(
+        (key.x + 0.5f) * voxel_size,
+        (key.y + 0.5f) * voxel_size,
+        (key.z + 0.5f) * voxel_size
+    );
 }
 
 } // namespace

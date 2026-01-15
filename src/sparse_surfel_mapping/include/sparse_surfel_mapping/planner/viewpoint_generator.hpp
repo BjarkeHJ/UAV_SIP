@@ -19,12 +19,11 @@ public:
     void set_map(const SurfelMap* map);
     void set_collision_checker(const CollisionChecker* cc) { collision_checker_ = cc; }
     void set_coverage_tracker(const CoverageTracker* ct) { coverage_tracker_ = ct; }
-    
-    std::vector<Viewpoint> generate_from_seed(const Eigen::Vector3f& seed_position, float seed_yaw);
-    std::vector<Viewpoint> generate_from_viewpoint(const Viewpoint& from_viewpoint);
+
+    std::vector<Viewpoint> generate_next_viewpoints(const Eigen::Vector3f& position, float yaw);
+    std::vector<Viewpoint> generate_continuation(const Viewpoint& start_viewpoint);
 
     std::vector<Viewpoint> grow_step(const VoxelKeySet& current_coverage, const Eigen::Vector3f& search_center, const VoxelKeySet& already_covered);
-
     std::vector<StructuralFeature> analyze_structure(const VoxelKeySet& visible_voxels);
     std::vector<Viewpoint> generate_for_features(const std::vector<StructuralFeature>& features, const VoxelKeySet& current_coverage);
 
@@ -33,26 +32,24 @@ public:
     size_t last_candidates_generated() const { return last_candidates_generated_; }
     size_t last_candidates_in_collision() const { return last_candidates_in_collision_; }
     double last_generation_time_ms() const { return last_generation_time_ms_; }
+
 private:
- 
+    std::vector<Viewpoint> build_chain(const VoxelKeySet& initial_coverage, const VoxelKeySet& seed_visible, const Eigen::Vector3f& seed_position);
+    Eigen::Vector3f compute_expansion_center(const VoxelKeySet& visible_voxels, const VoxelKeySet& already_covered) const;
+    std::vector<Viewpoint> generate_candidates_for_clusters(const std::vector<FrontierCluster>& clusters, const VoxelKeySet& already_covered);
     Viewpoint generate_viewpoint_for_cluster(const FrontierCluster& cluster, const VoxelKeySet& already_covered);
-
-    bool find_valid_view_position(const FrontierCluster& cluster, Eigen::Vector3f& out_pos, float& out_yaw);
-    bool is_position_valid(const Eigen::Vector3f& position) const;
-
-    void score_viewpoint(Viewpoint& vp, const VoxelKeySet& already_covered, const FrontierCluster& target_cluster);
+    Viewpoint* select_best_for_chain(std::vector<Viewpoint>& candidates, const VoxelKeySet& cumulative_coverage, const Eigen::Vector3f& previous_position, const std::vector<Viewpoint>& existing_chain);
     
-    std::vector<Viewpoint> select_best_viewpoints(std::vector<Viewpoint>& candidates, size_t max_count, const VoxelKeySet& already_covered);
-
+    bool is_position_valid(const Eigen::Vector3f& position) const;
+    void score_viewpoint(Viewpoint& vp, const VoxelKeySet& already_covered, const FrontierCluster& target_cluster);
     float compute_yaw_to_target(const Eigen::Vector3f& from_pos, const Eigen::Vector3f& target_pos) const;
-
+    Eigen::Vector3f key_to_position(const VoxelKey& key) const;
     uint64_t generate_id() { return next_viewpoint_id_++; }
 
     InspectionPlannerConfig config_;
     const SurfelMap* map_{nullptr};
     const CollisionChecker* collision_checker_{nullptr};
     const CoverageTracker* coverage_tracker_{nullptr};
-
     FrontierFinder frontier_finder_;
 
     uint64_t next_viewpoint_id_{0};

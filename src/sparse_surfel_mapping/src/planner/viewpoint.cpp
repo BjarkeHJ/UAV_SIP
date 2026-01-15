@@ -21,6 +21,8 @@ void FrustumCalculator::precompute() {
     tan_half_vfov_ = std::tan(half_vfov_rad);
 
     cos_max_angle_ = std::cos(config_.max_incidence_angle_deg * M_PI / 180.0f);
+    min_r2_ = config_.min_range * config_.min_range;
+    max_r2_ = config_.max_range * config_.max_range;
 }
 
 FrustumPlanes FrustumCalculator::compute_frustum(const Eigen::Vector3f& position, float yaw) const {
@@ -59,19 +61,31 @@ FrustumPlanes FrustumCalculator::compute_frustum(const Eigen::Vector3f& position
 
     // computing the 6 frustum planes normal.dot(p) + d = 0
     // normal pointing inward (towards camera)
-    auto make_plane = [](const Eigen::Vector3f& p0, const Eigen::Vector3f& p1, const Eigen::Vector3f& p2) -> Eigen::Vector4f {
-        Eigen::Vector3f v1 = p1 - p0;
-        Eigen::Vector3f v2 = p2 - p0;
-        Eigen::Vector3f normal = v1.cross(v2).normalized();
+    auto make_plane =
+    [&](const Eigen::Vector3f& p0,
+        const Eigen::Vector3f& p1,
+        const Eigen::Vector3f& p2) -> Eigen::Vector4f
+    {
+        Eigen::Vector3f normal = (p1 - p0).cross(p2 - p0).normalized();
         float d = -normal.dot(p0);
-        return Eigen::Vector4f(normal.x(), normal.y(), normal.z(), d);
+
+        Eigen::Vector4f plane(normal.x(), normal.y(), normal.z(), d);
+
+        // Ensure inside_point is classified as inside
+        Eigen::Vector3f inside_point =
+            position + forward * (config_.min_range + 1e-3f);
+
+        if (normal.dot(inside_point) + d < 0.0f)
+            plane *= -1.0f;
+
+        return plane;
     };
 
-    // Near plane: normal points away from camera
-    frustum.planes[0] = Eigen::Vector4f(forward.x(), forward.y(), forward.z(), -forward.dot(near_center));
+    // Near plane
+    frustum.planes[0] = make_plane(frustum.corners[3], frustum.corners[0],frustum.corners[1]);
 
-    // Far plane: normal points towards camera
-    frustum.planes[1] = Eigen::Vector4f(-forward.x(), -forward.y(), -forward.z(), forward.dot(far_center));
+    // Far plane
+    frustum.planes[1] = make_plane(frustum.corners[5], frustum.corners[4], frustum.corners[7]);
 
     // Left plane: from near_bl -> near_tl -> far_tl
     frustum.planes[2] = make_plane(frustum.corners[3], frustum.corners[0], frustum.corners[4]);
@@ -113,24 +127,17 @@ bool FrustumCalculator::is_voxel_visible(const FrustumPlanes& frustum, const Eig
     return true;
 }
 
-bool FrustumCalculator::is_surfel_visible(const FrustumPlanes& frustum, const Eigen::Vector3f& camera_position,float yaw, const Eigen::Vector3f& surfel_position, const Eigen::Vector3f& surfel_normal) const {
+bool FrustumCalculator::is_surfel_visible(const FrustumPlanes& frustum, const Eigen::Vector3f& camera_position,float yaw, const Eigen::Vector3f& surfel_position, const Eigen::Vector3f& surfel_normal) const {   
+    Eigen::Vector3f diff = camera_position - surfel_position;
+    float dist2 = diff.squaredNorm();
+    if (dist2 < min_r2_ || dist2 > max_r2_) return false;
     
-    Eigen::Vector3f to_surfel = surfel_position - camera_position;
-    float distance = to_surfel.norm();
-    if (distance < config_.min_range || distance > config_.max_range) return false;
+    float dot = surfel_normal.dot(diff);
+    if (dot <= 0) return false;
 
-    Eigen::Vector3f forward(std::cos(yaw), std::sin(yaw), 0.0f);
-    if (forward.dot(to_surfel) < 0) return false;
-    return true;
-   
-    // if (!frustum.contains_point(surfel_position)) return false;
-
-    // const Eigen::Vector3f view_dir = (camera_position - surfel_position).normalized();
-    // const float cos_angle = surfel_normal.dot(view_dir);
-
-    // const float cos_th = std::cos(config_.max_incidence_angle_deg * M_PI / 180.0f);
+    if (dot * dot < dist2 * cos_max_angle_ * cos_max_angle_) return false;
     
-    // return cos_angle > cos_th;
+    return frustum.contains_point(surfel_position);
 }
 
 // --- VIEWPOINT ---
@@ -179,6 +186,17 @@ size_t Viewpoint::compute_visibility(const SurfelMap& map, bool check_occlusion)
         for (int32_t y = min_key.y; y <= max_key.y; ++y) {
             for (int32_t z = min_key.z; z <= max_key.z; ++z) {
                 VoxelKey key{x,y,z};
+
+                // Check voxel center visibility
+                Eigen::Vector3f voxel_min(
+                    key.x * voxel_size,
+                    key.y * voxel_size,
+                    key.z * voxel_size
+                );
+
+                Eigen::Vector3f voxel_max = voxel_min + Eigen::Vector3f::Constant(voxel_size);
+                if (!frustum_calc_.is_voxel_visible(frustum_, voxel_min, voxel_max))
+                    continue;
 
                 auto voxel_opt = voxels.get(key);
                 if (!voxel_opt || !voxel_opt->get().has_valid_surfel()) {

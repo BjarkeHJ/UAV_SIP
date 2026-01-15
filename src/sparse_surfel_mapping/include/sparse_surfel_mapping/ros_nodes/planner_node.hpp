@@ -4,6 +4,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <nav_msgs/msg/path.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
+#include <sensor_msgs/msg/point_cloud2.hpp>
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
 #include <tf2_eigen/tf2_eigen.hpp>
@@ -31,6 +32,8 @@ private:
     void publish_path();
     void publish_statistics();
 
+    void publish_fov_pointcloud();
+
     std::unique_ptr<InspectionPlanner> planner_;
     SurfelMap* map_{nullptr}; // raw pointer to map ("just observing")
     
@@ -40,9 +43,15 @@ private:
     rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr path_pub_;
     rclcpp::TimerBase::SharedPtr plan_timer_;
 
+    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr fov_cloud_pub_;
+    rclcpp::TimerBase::SharedPtr fov_timer_;
+
     std::string global_frame_;
     std::string drone_frame_;
     double planner_rate_{0.0};
+
+    // config
+    InspectionPlannerConfig config_;
 
     // tracking
     float target_reach_th_{0.5f};

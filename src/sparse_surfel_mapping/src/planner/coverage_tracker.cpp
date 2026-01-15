@@ -9,7 +9,7 @@ CoverageTracker::CoverageTracker(const InspectionPlannerConfig& config)
 {}
 
 void CoverageTracker::mark_observed(const VoxelKeySet& voxels, uint64_t viewpoint_id) {
-    (void)viewpoint_id; // could track
+    (void)viewpoint_id; // could track viewpoint observed
 
     for (const auto& key : voxels) {
         observed_voxels_.insert(key);
@@ -24,9 +24,11 @@ void CoverageTracker::record_visited_viewpoint(const Viewpoint& viewpoint) {
     state.status = ViewpointStatus::VISITED;
     state.timestamp_visited = std::chrono::duration<double>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
 
+    // Log visited viewpoints
     visited_viewpoints_.push_back(state);
     stats_.viewpoints_visited = visited_viewpoints_.size();
 
+    // Update observed surface 
     mark_observed(viewpoint.visible_voxels(), viewpoint.id());
 }
 
@@ -47,6 +49,10 @@ bool CoverageTracker::is_viewpoint_visited(const Viewpoint& viewpoint) const {
     }
 
     return false;
+}
+
+bool CoverageTracker::is_observed(const VoxelKey& key) const {
+    return observed_voxels_.count(key) > 0;
 }
 
 size_t CoverageTracker::get_observation_count(const VoxelKey& key) const {

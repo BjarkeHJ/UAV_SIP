@@ -22,6 +22,7 @@ public:
     bool is_viewpoint_visited(const Viewpoint& viewpoint) const;
     bool is_observed(const VoxelKey& key) const;
     size_t get_observation_count(const VoxelKey& key) const;
+    
     void update_statistics(size_t total_surfels);
 
     void reset();
@@ -45,6 +46,7 @@ private:
 
     VoxelKeySet observed_voxels_;
     std::unordered_map<VoxelKey, size_t, VoxelKeyHash> observation_counts_;
+    
     std::vector<ViewpointState> visited_viewpoints_;
     
     PlanningStatistics stats_;

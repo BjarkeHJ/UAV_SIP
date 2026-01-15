@@ -81,16 +81,16 @@ void TestFlight::send_once() {
 
     // Hardcoded square in warehouse world
     path.poses.push_back(make_pose(0, 0, 5, 0.0f));
-    path.poses.push_back(make_pose(0, 5, 5, -M_PI_4));
-    path.poses.push_back(make_pose(5, 5, 5, -M_PI_2));
-    path.poses.push_back(make_pose(10, 5, 5, -M_PI_2));
-    path.poses.push_back(make_pose(20, 5, 5, -M_PI_2));
-    path.poses.push_back(make_pose(30, 5, 5, -M_PI_2 - M_PI_4));
-    path.poses.push_back(make_pose(30, -5, 5, M_PI - M_PI_4));
-    path.poses.push_back(make_pose(20, -5, 5, M_PI_2));
-    path.poses.push_back(make_pose(10, -5, 5, M_PI_2));
-    path.poses.push_back(make_pose(5, -5, 5, M_PI_2));
-    path.poses.push_back(make_pose(0, -5, 5, M_PI_4));
+    path.poses.push_back(make_pose(0, 3, 5, -M_PI_4));
+    path.poses.push_back(make_pose(5, 3, 5, -M_PI_2));
+    path.poses.push_back(make_pose(10, 3, 5, -M_PI_2));
+    path.poses.push_back(make_pose(20, 3, 5, -M_PI_2));
+    path.poses.push_back(make_pose(30, 3, 5, -M_PI_2 - M_PI_4));
+    path.poses.push_back(make_pose(30, -3, 5, M_PI - M_PI_4));
+    path.poses.push_back(make_pose(20, -3, 5, M_PI_2));
+    path.poses.push_back(make_pose(10, -3, 5, M_PI_2));
+    path.poses.push_back(make_pose(5, -3, 5, M_PI_2));
+    path.poses.push_back(make_pose(0, -3, 5, M_PI_4));
     path.poses.push_back(make_pose(0, 0, 2, 0.0f));
     goal.path = path;
 
