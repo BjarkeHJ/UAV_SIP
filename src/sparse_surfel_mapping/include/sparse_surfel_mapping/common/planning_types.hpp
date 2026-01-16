@@ -50,7 +50,7 @@ struct ViewpointConfig {
     float max_view_distance{5.0f};
 
     // Region growing parameters
-    size_t max_chain_length{10};
+    size_t max_chain_length{5};
     float max_expansion_radius{3.0f};
 
     // Frontier clustering
@@ -61,7 +61,7 @@ struct ViewpointConfig {
     float target_overlap_ratio{0.20f}; // adjacent viewpoints has ~20% surface overlap
     float min_overlap_ratio{0.10f};
     float max_overlap_ratio{0.40f};
-    float min_new_coverage_ratio{0.05f};
+    float min_new_coverage_ratio{0.1f};
 
     // Structural analysis
     bool enable_structural_analysis{true};
@@ -81,12 +81,12 @@ struct InspectionPlannerConfig {
     ViewpointConfig viewpoint;
 
     // Planning strategy
-    size_t max_viewpoints_per_plan{10};
+    size_t max_viewpoints_per_plan{5};
     float replan_distance_th{1.0f};
     float replan_coverage_th{0.25f};
 
     // Path commitment
-    size_t commit_horizon{2}; // dont replan (unless collision detected)
+    size_t commit_horizon{3}; // dont replan (unless collision detected)
     size_t min_horizon_buffer{2};  // extend path trigger if: total_planned - commit_horizon < min_horizon_buffer
 
     // Termination

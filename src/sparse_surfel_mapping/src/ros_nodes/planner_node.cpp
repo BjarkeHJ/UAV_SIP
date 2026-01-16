@@ -142,11 +142,12 @@ void InspectionPlannerNode::planner_timer_callback() {
     }
     else if (planner_->needs_extension()) {
         // Horizon buffer is low - extend the plan
-        RCLCPP_DEBUG(this->get_logger(), 
+        RCLCPP_INFO(this->get_logger(), 
             "Horizon buffer low (%zu uncommitted) - extending", 
             planner_->uncommitted_count());
         
         if (planner_->extend_plan()) {
+            std::cout << "GOES HERE" << std::endl;
             plan_changed = true;
             RCLCPP_INFO(this->get_logger(), 
                 "Plan extended: %zu total (%zu committed, %zu uncommitted)",
@@ -160,8 +161,11 @@ void InspectionPlannerNode::planner_timer_callback() {
     lock.unlock();
 
     if (plan_changed) {
+        std::cout << "HELLO!" << std::endl;
         publish_path();
     }
+
+    std::cout << "RUNNING!" << std::endl;
 }
 
 void InspectionPlannerNode::safety_timer_callback() {
@@ -199,7 +203,7 @@ void InspectionPlannerNode::safety_timer_callback() {
         // Deactivate normal planning
         is_active_ = false;
     }
-    else if (state == InspectionPlanner::PlannerState::EXTENDING) {
+    else if (state == InspectionPlanner::PlannerState::EXECUTING) {
         // Path was modified due to collision in uncommitted segment
         // Publish updated path
         publish_path();
@@ -276,7 +280,7 @@ void InspectionPlannerNode::publish_path() {
         msg.poses.push_back(pose);
     }
 
-    RCLCPP_DEBUG(this->get_logger(), "Publishing path with %zu waypoints", msg.poses.size());
+    RCLCPP_INFO(this->get_logger(), "Publishing path with %zu waypoints", msg.poses.size());
     path_pub_->publish(msg);
 }
 

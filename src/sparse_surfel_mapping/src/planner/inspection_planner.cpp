@@ -147,9 +147,10 @@ InspectionPlanner::PlannerState InspectionPlanner::evaluate_and_react() {
 
     switch (eval.status) {
         case PathSafetyStatus::SAFE:
-            if (needs_extension()) {
-                extend_plan();
-            }
+            planner_state_ = PlannerState::EXECUTING;
+            // if (needs_extension()) {
+            //     extend_plan();
+            // }
             break;
         
         case PathSafetyStatus::COLLISION_COMMITED:
@@ -518,7 +519,6 @@ void InspectionPlanner::update_path() {
     current_path_.compute_length();
     current_path_.is_valid = true;
 }
-
 
 const Viewpoint& InspectionPlanner::get_next_target() const {
     if (planned_viewpoints_.empty()) return invalid_viewpoint_;
