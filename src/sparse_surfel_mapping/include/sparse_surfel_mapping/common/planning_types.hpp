@@ -32,17 +32,6 @@ struct CollisionConfig {
     float inflation_radius() const { return drone_radius + safety_margin; }
 };
 
-struct PathPlannerConfig {
-    float grid_resolution{0.3f}; // voxel size
-    size_t max_iterations{10000};
-    float heuristic_weight{1.2f};
-    bool enable_smoothing{true};
-    size_t smoothing_iterations{3};
-    float smoothing_weight{0.3f};
-    float max_path_lenght{50.0f};
-    float waypoint_spacing{0.5f};
-};
-
 struct ViewpointConfig {
     // Viewpoint Geometry
     float optimal_view_distance{1.5f};
@@ -72,13 +61,10 @@ struct ViewpointConfig {
 struct InspectionPlannerConfig {
     CameraConfig camera;
     CollisionConfig collision;
-    PathPlannerConfig path_planner;
     ViewpointConfig viewpoint;
 
     // Planning strategy
     size_t max_viewpoints_per_plan{5};
-    float replan_distance_th{1.0f};
-    float replan_coverage_th{0.25f};
 
     // Path commitment
     size_t commit_horizon{3}; // dont replan (unless collision detected)
@@ -120,9 +106,8 @@ struct ViewpointState {
     float total_score{0.0f};
 
     ViewpointStatus status{ViewpointStatus::CANDIDATE};
-    double timestamp_created{0.0};
-    double timestamp_visited{0.0};
     float path_cost{std::numeric_limits<float>::infinity()};
+    double timestamp_visited{0.0};
 
     Eigen::Vector3f forward_direction() const {
         return Eigen::Vector3f(std::cos(yaw), std::sin(yaw), 0.0f);
@@ -184,23 +169,6 @@ struct FrontierCluster {
     }
 };
 
-enum class StructuralFeatureType {
-    CORNER,
-    EDGE,
-    PLANAR_BOUNDARY,
-    OCCULSION_EDGE
-};
-
-struct StructuralFeature {
-    StructuralFeatureType type;
-    Eigen::Vector3f position;
-    Eigen::Vector3f direction; // edge direction or corner bisector
-    Eigen::Vector3f view_direction; // suggested view direction
-    float importance{0.0f};
-
-    std::vector<VoxelKey> associated_surfels;
-};
-
 struct InspectionPath {
     std::vector<Eigen::Vector3f> waypoints;
     std::vector<float> yaw_angles;
@@ -241,8 +209,8 @@ struct PathEvaluationResult {
     float collision_distance{std::numeric_limits<float>::infinity()};
     bool collision_in_commited{false};
     int collision_segment{-1}; // path index of start of collision segment
-    float min_clearence{std::numeric_limits<float>::infinity()};
-    int min_clearence_index{-1};
+    float min_clearance{std::numeric_limits<float>::infinity()};
+    int min_clearance_index{-1};
 
     bool is_safe() const { return status == PathSafetyStatus::SAFE; }
     bool need_emergency_stop() const { return status == PathSafetyStatus::COLLISION_COMMITED; }
@@ -250,25 +218,10 @@ struct PathEvaluationResult {
 };
 
 
-// A* Node for planning
-struct AStarNode {
-    VoxelKey key;
-    float g_cost{std::numeric_limits<float>::infinity()};
-    float h_cost{0.0f};
-    float f_cost() const { return g_cost + h_cost; }
-    VoxelKey parent;
-    bool in_open_set{false};
-    bool in_closed_set{false};
-
-    bool operator>(const AStarNode& other) const {
-        return f_cost() > other.f_cost();
-    }
-};
-
 
 // Statistics
 struct PlanningStatistics {
-    size_t total_surlfes{0};
+    size_t total_surfles{0};
     size_t covered_surfels{0};
     float coverage_ratio{0.0f};
 
@@ -276,9 +229,6 @@ struct PlanningStatistics {
     size_t viewpoints_planned{0};
     size_t viewpoints_rejected{0};
 
-    double viewpoint_generation_time_ms{0.0};
-    double coverage_computation_time_ms{0.0};
-    double collision_check_time_ms{0.0};
     double total_planning_time_ms{0.0};
 
     float total_path_length{0.0f};

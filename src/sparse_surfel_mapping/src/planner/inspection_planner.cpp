@@ -100,7 +100,7 @@ PathEvaluationResult InspectionPlanner::evaluate_path() const {
 
     const size_t ci = commit_index();
     float accumulated_distance = 0.0f;
-    result.min_clearence = std::numeric_limits<float>::infinity();
+    result.min_clearance = std::numeric_limits<float>::infinity();
 
     for (size_t i = 0; i < current_path_.waypoints.size() - 1; ++i) {
         const Eigen::Vector3f& start = current_path_.waypoints[i];
@@ -130,9 +130,9 @@ PathEvaluationResult InspectionPlanner::evaluate_path() const {
         }
 
         float clearance = collision_checker_.distance_to_nearest_obstacle(end, 5.0f);
-        if (clearance < result.min_clearence) {
-            result.min_clearence = clearance;
-            result.min_clearence_index = static_cast<int>(i + 1);
+        if (clearance < result.min_clearance) {
+            result.min_clearance = clearance;
+            result.min_clearance_index = static_cast<int>(i + 1);
         }
 
         accumulated_distance += (end - start).norm();
@@ -319,7 +319,7 @@ bool InspectionPlanner::extend_plan() {
     stats_.path_extensions++;
 
     if (!map_) {
-        planner_state_ == PlannerState::FAILED;
+        planner_state_ = PlannerState::FAILED;
         return false;
     }
 
@@ -487,7 +487,6 @@ void InspectionPlanner::mark_target_reached() {
             if (config_.debug_output) {
                 std::cout << "  Horizon buffer low - triggering extension" << std::endl;
             }
-            needs_extension_ = true;
         }
     } else {
         current_path_.clear();
@@ -531,23 +530,10 @@ bool InspectionPlanner::is_inspection_complete() const {
     return false;
 }
 
-bool InspectionPlanner::has_map_changed_significantly() const {
-    if (!map_) return false;
-
-    size_t current_count = map_->num_valid_surfels();
-    if (map_surfels_at_last_plan_ == 0) return current_count > 100;
-
-    float change_ratio = static_cast<float>(std::abs(
-        static_cast<int>(current_count) - static_cast<int>(map_surfels_at_last_plan_))) 
-        / static_cast<float>(map_surfels_at_last_plan_);
-
-    return change_ratio > config_.replan_coverage_th;
-}
-
 void InspectionPlanner::update_statistics() {
     if (!map_) return;
 
-    stats_.total_surlfes = map_->num_valid_surfels();
+    stats_.total_surfles = map_->num_valid_surfels();
     stats_.covered_surfels = coverage_tracker_.num_observed();
     stats_.coverage_ratio = coverage_tracker_.coverage_ratio();
     stats_.viewpoints_visited = total_viewpoints_visited_;
@@ -565,7 +551,6 @@ void InspectionPlanner::reset() {
     
     seed_viewpoint_.reset();
     needs_full_replan_ = true;
-    needs_extension_ = false;
     
     map_surfels_at_last_plan_ = 0;
     total_viewpoints_visited_ = 0;

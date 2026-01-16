@@ -81,11 +81,6 @@ void InspectionPlannerNode::declare_parameters() {
     this->declare_parameter("collision.safety_distance", 0.5);
     this->declare_parameter("collision.path_resolution", 0.1);
 
-    // Path Planning
-    this->declare_parameter("path.max_iterations", 100);
-    this->declare_parameter("path.heuristic_weigt", 1.2);
-    this->declare_parameter("path.enable_smoothing", true);
-
     // Inspection
     this->declare_parameter("inspection.max_viewpoints_per_plan", 5);
 

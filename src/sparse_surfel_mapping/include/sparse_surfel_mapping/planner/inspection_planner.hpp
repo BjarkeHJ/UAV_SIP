@@ -68,7 +68,6 @@ public:
     
 private:
     void initialize_components();
-    bool has_map_changed_significantly() const;
     void update_statistics();
     void update_path();
     void update_viewpoint_statuses();
@@ -90,7 +89,6 @@ private:
     std::deque<Viewpoint> planned_viewpoints_;
     InspectionPath current_path_;
     bool needs_full_replan_{true};
-    bool needs_extension_{false};
 
     Viewpoint invalid_viewpoint_; // return when no plan
     std::optional<Viewpoint> seed_viewpoint_; // for initializing viewpoint generation

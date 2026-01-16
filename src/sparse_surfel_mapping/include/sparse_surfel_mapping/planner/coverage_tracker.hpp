@@ -39,7 +39,7 @@ public:
 
     std::vector<ViewpointState> find_nearest_visited(const Eigen::Vector3f& position, size_t n) const;
     
-    float get_local_coverage_ratio(const Eigen::Vector3f& center, float radius, const VoxelKeySet& local_voxels) const;
+    float get_local_coverage_ratio(const VoxelKeySet& local_voxels) const;
 
 private:
     InspectionPlannerConfig config_;

@@ -127,7 +127,7 @@ bool FrustumCalculator::is_voxel_visible(const FrustumPlanes& frustum, const Eig
     return true;
 }
 
-bool FrustumCalculator::is_surfel_visible(const FrustumPlanes& frustum, const Eigen::Vector3f& camera_position,float yaw, const Eigen::Vector3f& surfel_position, const Eigen::Vector3f& surfel_normal) const {   
+bool FrustumCalculator::is_surfel_visible(const FrustumPlanes& frustum, const Eigen::Vector3f& camera_position, const Eigen::Vector3f& surfel_position, const Eigen::Vector3f& surfel_normal) const {   
     Eigen::Vector3f diff = camera_position - surfel_position;
     float dist2 = diff.squaredNorm();
     if (dist2 < min_r2_ || dist2 > max_r2_) return false;
@@ -207,7 +207,7 @@ size_t Viewpoint::compute_visibility(const SurfelMap& map, bool check_occlusion)
                 const Surfel& surfel = voxel.surfel();
                 
                 // Surfel visible?
-                if (frustum_calc_.is_surfel_visible(frustum_, state_.position, state_.yaw, surfel.mean(), surfel.normal())) {
+                if (frustum_calc_.is_surfel_visible(frustum_, state_.position, surfel.mean(), surfel.normal())) {
                     
                     // Optional ray-cast occlusion check 
                     if (check_occlusion) {
@@ -248,7 +248,7 @@ size_t Viewpoint::compute_visibility(const SurfelMap& map, bool check_occlusion)
     return state_.visible_voxels.size();
 }
 
-float Viewpoint::compute_coverage_score(const VoxelKeySet& observed_voxels, const ViewpointConfig& config) {
+float Viewpoint::compute_coverage_score(const VoxelKeySet& observed_voxels) {
     state_.new_coverage_voxels.clear();
 
     for (const auto& key : state_.visible_voxels) {
@@ -271,18 +271,9 @@ float Viewpoint::compute_coverage_score(const VoxelKeySet& observed_voxels, cons
     return state_.coverage_score;
 }
 
-void Viewpoint::compute_total_score(const Eigen::Vector3f& current_pos, const VoxelKeySet& observed_voxels, const ViewpointConfig& config) {
-    compute_coverage_score(observed_voxels, config);
+void Viewpoint::compute_total_score(const VoxelKeySet& observed_voxels) {
+    compute_coverage_score(observed_voxels);
     state_.total_score = state_.coverage_score;
-    // float overlap_penalty = 0.0f;
-    // if (state_.overlap_score < config.min_overlap_ratio) {
-    //     overlap_penalty = 0.1f;
-    // }
-    // else if (state_.overlap_score > config.max_overlap_ratio) {
-    //     overlap_penalty = 0.2f * (state_.overlap_score - config.target_overlap_ratio);
-    // }
-
-    // TBD and TODO
 }
 
 bool Viewpoint::is_similar_to(const Viewpoint& other, float pos_th, float angle_th) const {

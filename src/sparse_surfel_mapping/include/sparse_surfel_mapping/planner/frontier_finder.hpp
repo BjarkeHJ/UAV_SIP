@@ -15,7 +15,7 @@ public:
     // find_frontier_from_coverage -> main
     std::vector<FrontierSurfel> find_frontiers_from_coverage(const VoxelKeySet& cumulative_coverage, const Eigen::Vector3f& expansion_center, float max_expansion_radius) const;
     std::vector<FrontierCluster> cluster_frontiers(const std::vector<FrontierSurfel>& frontiers, float cluster_radius, size_t min_cluster_size) const;
-    void compute_cluster_view_suggestion(FrontierCluster& cluster, float optimal_distance, float min_distance) const;
+    void compute_cluster_view_suggestion(FrontierCluster& cluster, float optimal_distance) const;
 
 private:
     std::vector<VoxelKey> get_neighbors_6(const VoxelKey& key) const;

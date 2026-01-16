@@ -109,7 +109,7 @@ std::vector<FrontierCluster> FrontierFinder::cluster_frontiers(const std::vector
     return clusters;
 }
 
-void FrontierFinder::compute_cluster_view_suggestion(FrontierCluster& cluster, float optimal_distance, float min_distance) const {
+void FrontierFinder::compute_cluster_view_suggestion(FrontierCluster& cluster, float optimal_distance) const {
     if (cluster.surfels.empty()) return;
 
     cluster.compute_centroid();

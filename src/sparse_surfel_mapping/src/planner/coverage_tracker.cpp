@@ -61,7 +61,7 @@ size_t CoverageTracker::get_observation_count(const VoxelKey& key) const {
 }
 
 void CoverageTracker::update_statistics(size_t total_surfels) {
-    stats_.total_surlfes = total_surfels;
+    stats_.total_surfles = total_surfels;
     stats_.covered_surfels = observed_voxels_.size();
     stats_.viewpoints_visited = visited_viewpoints_.size();
 
@@ -106,14 +106,11 @@ std::vector<ViewpointState> CoverageTracker::find_nearest_visited(const Eigen::V
     return result;
 }
 
-
-float CoverageTracker::get_local_coverage_ratio(const Eigen::Vector3f& center, float radius, const VoxelKeySet& local_voxels) const {
+float CoverageTracker::get_local_coverage_ratio(const VoxelKeySet& local_voxels) const {
     if (local_voxels.empty()) return 0.0f;
 
     size_t total_in_region = 0;
     size_t observed_in_region = 0;
-
-    const float radius_sq = radius * radius;
 
     for (const auto& key : local_voxels) {
         total_in_region++;
@@ -124,10 +121,6 @@ float CoverageTracker::get_local_coverage_ratio(const Eigen::Vector3f& center, f
 
     return static_cast<float>(observed_in_region) / total_in_region;
 }
-
-
-
-
 
 
 } // namespace

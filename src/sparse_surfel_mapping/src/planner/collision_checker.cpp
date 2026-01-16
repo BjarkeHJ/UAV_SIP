@@ -23,7 +23,6 @@ bool CollisionChecker::is_sphere_in_collision(const Eigen::Vector3f& point, floa
     const std::vector<VoxelKey> voxels = get_voxels_in_sphere(point, radius);
 
     const float voxel_size = map_->voxel_size();
-    const float radius_sq = radius * radius;
 
     for (const auto& key : voxels) {
         if (!is_voxel_occupied(key)) continue;
@@ -89,8 +88,8 @@ float CollisionChecker::find_first_collision(const Eigen::Vector3f& point, const
     const float radius = config_.inflation_radius();
 
     for (float t = 0.0f; t < max_dist; t += step) {
-        const Eigen::Vector3f point = point + direction * t;
-        if (is_sphere_in_collision(point, radius)) return t;
+        const Eigen::Vector3f sample_point = point + direction * t;
+        if (is_sphere_in_collision(sample_point, radius)) return t;
     }
     
     return max_dist;
@@ -165,7 +164,6 @@ std::vector<VoxelKey> CollisionChecker::get_voxels_in_sphere(const Eigen::Vector
     const float voxel_size = map_->voxel_size();
     const int voxel_radius = static_cast<int>(std::ceil(radius / voxel_size)) + 1;
     const VoxelKey center_key = point_to_key(center);
-    const float radius_sq = radius * radius;
 
     result.reserve(static_cast<size_t>((2 * voxel_size + 1) * (2 * voxel_size + 1) * (2 * voxel_size + 1)));
 

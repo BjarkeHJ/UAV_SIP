@@ -16,7 +16,7 @@ public:
     FrustumPlanes compute_frustum(const Eigen::Vector3f& position, float yaw) const;
     bool is_point_visible(const FrustumPlanes& frustum, const Eigen::Vector3f& point) const;
     bool is_voxel_visible(const FrustumPlanes& frustum, const Eigen::Vector3f& voxel_min, const Eigen::Vector3f& voxel_max) const;
-    bool is_surfel_visible(const FrustumPlanes& frustum, const Eigen::Vector3f& camera_position, float yaw, const Eigen::Vector3f& surfel_position, const Eigen::Vector3f& surfel_normal) const;
+    bool is_surfel_visible(const FrustumPlanes& frustum, const Eigen::Vector3f& camera_position, const Eigen::Vector3f& surfel_position, const Eigen::Vector3f& surfel_normal) const;
 
 private:
     void precompute();
@@ -41,8 +41,8 @@ public:
     ~Viewpoint() = default;
 
     size_t compute_visibility(const SurfelMap& map, bool check_occlusion = false);
-    float compute_coverage_score(const VoxelKeySet& observed_voxels, const ViewpointConfig& config);
-    void compute_total_score(const Eigen::Vector3f& current_pos, const VoxelKeySet& observed_voxels, const ViewpointConfig& config);
+    float compute_coverage_score(const VoxelKeySet& observed_voxels);
+    void compute_total_score(const VoxelKeySet& observed_voxels);
 
     ViewpointState& state() { return state_; }
     const ViewpointState& state() const { return state_; }

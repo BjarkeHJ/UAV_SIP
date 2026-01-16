@@ -207,7 +207,7 @@ std::vector<Viewpoint> ViewpointGenerator::build_chain(const VoxelKeySet& initia
 
         // Finalize the selected viewpoint
         selected->compute_visibility(*map_, true);
-        selected->compute_coverage_score(cumulative_coverage, vp_config);
+        selected->compute_coverage_score(cumulative_coverage);
         selected->set_status(ViewpointStatus::PLANNED);
 
         if (config_.debug_output) {
@@ -279,10 +279,7 @@ std::vector<Viewpoint> ViewpointGenerator::generate_candidates_for_clusters(cons
     const auto& vp_config = config_.viewpoint;
 
     for (auto cluster : clusters) {  // Copy to allow modification
-        frontier_finder_.compute_cluster_view_suggestion(
-            cluster,
-            vp_config.optimal_view_distance,
-            vp_config.min_view_distance);
+        frontier_finder_.compute_cluster_view_suggestion(cluster, vp_config.optimal_view_distance);
 
         Viewpoint vp = generate_viewpoint_for_cluster(cluster, already_covered);
 
@@ -464,7 +461,7 @@ bool ViewpointGenerator::is_position_valid(const Eigen::Vector3f& position) cons
 void ViewpointGenerator::score_viewpoint(Viewpoint& vp, const VoxelKeySet& already_covered, const FrontierCluster& target_cluster) {
     const auto& vp_config = config_.viewpoint;
 
-    vp.compute_coverage_score(already_covered, vp_config);
+    vp.compute_coverage_score(already_covered);
     float coverage_score = vp.coverage_score();
 
     // Frontier alignment score

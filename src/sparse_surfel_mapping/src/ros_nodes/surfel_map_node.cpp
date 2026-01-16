@@ -158,6 +158,9 @@ void SurfelMapNode::pointcloud_callback(const sensor_msgs::msg::PointCloud2::Sha
 
     const auto te = std::chrono::high_resolution_clock::now();
     double telaps = std::chrono::duration<double, std::milli>(te - ts).count();
+    
+    (void)telaps;
+    (void)integrated;
 
     // RCLCPP_INFO(this->get_logger(), "Total Time: %.3f ms", telaps);
     // RCLCPP_INFO(this->get_logger(), "Integrated: %zu points", integrated);
