@@ -42,7 +42,8 @@ public:
     size_t compute_visibility(const SurfelMap& map, bool check_occlusion = false);
     float compute_coverage_score(const VoxelKeySet& observed_voxels);
     void compute_total_score(const VoxelKeySet& observed_voxels);
-    bool is_in_collision(const SurfelMap& map, float radius);
+    bool is_in_collision(const SurfelMap& map, float radius) const;
+    float distance_to_nearest_surface(const SurfelMap& map, float max_radius) const;
 
     ViewpointState& state() { return state_; }
     const ViewpointState& state() const { return state_; }

@@ -37,7 +37,6 @@ void InspectionPlanner::initialize(SurfelMap* map) {
 void InspectionPlanner::initialize_components() {
     collision_checker_.set_map(map_);
     viewpoint_generator_.set_map(map_);
-    viewpoint_generator_.set_collision_checker(&collision_checker_);
     viewpoint_generator_.set_coverage_tracker(&coverage_tracker_);
 }
 
@@ -98,46 +97,9 @@ PathEvaluationResult InspectionPlanner::evaluate_path() const {
         return result;
     }
 
-    const size_t ci = commit_index();
-    float accumulated_distance = 0.0f;
-    result.min_clearance = std::numeric_limits<float>::infinity();
-
+    // TODO NEED TO EVALUATE PATH BETWEEN ALL VIEWPOINTS
     for (size_t i = 0; i < current_path_.waypoints.size() - 1; ++i) {
-        const Eigen::Vector3f& start = current_path_.waypoints[i];
-        const Eigen::Vector3f& end = current_path_.waypoints[i + 1];
-
-        // Collision in path
-        // if (!collision_checker_.is_path_collision_free(start, end)) {
-        bool tester = false;
-        if (tester) {
-            result.first_collision_index = static_cast<int>(i);
-            result.collision_segment = static_cast<int>(i);
-            result.collision_distance = accumulated_distance;
-
-            Eigen::Vector3f dir = (end - start).normalized();
-            float segment_len = (end - start).norm();
-            result.collision_point = collision_checker_.find_first_collision(start, dir, segment_len) * dir + start;
-
-            size_t viewpoint_index = i;
-            result.collision_in_commited = (viewpoint_index < ci);
-
-            if (result.collision_in_commited) {
-                result.status = PathSafetyStatus::COLLISION_COMMITED;
-            }
-            else {
-                result.status = PathSafetyStatus::COLLISION_UNCOMMITED;
-            }
-
-            return result;
-        }
-
-        float clearance = collision_checker_.distance_to_nearest_obstacle(end, 5.0f);
-        if (clearance < result.min_clearance) {
-            result.min_clearance = clearance;
-            result.min_clearance_index = static_cast<int>(i + 1);
-        }
-
-        accumulated_distance += (end - start).norm();
+        // Check all viewpoint for collision (before RRT local planning)
     }
 
     result.status = PathSafetyStatus::SAFE;
@@ -253,22 +215,14 @@ bool InspectionPlanner::plan() {
 
     // Validate paths and build final chain
     planned_viewpoints_.clear();
-    Eigen::Vector3f path_start = current_position_;
-    
     for (auto& vp : chain) {
-        bool path_valid = collision_checker_.is_path_collision_free(path_start, vp.position());
-        path_valid = true;
-
-        if (path_valid) {
+        if (!vp.is_in_collision(*map_, config_.viewpoint.min_view_distance)) {
             planned_viewpoints_.push_back(std::move(vp));
-            path_start = planned_viewpoints_.back().position();
         } else {
             if (config_.debug_output) {
-                std::cout << "[InspectionPlanner] VP " << vp.id() 
-                          << " unreachable - path blocked" << std::endl;
+                std::cout << "[InspectionPlanner] VP " << vp.id() << " unreachable!" << std::endl;
             }
             stats_.viewpoints_rejected++;
-            break;  // Chain is sequential, can't skip
         }
     }
 

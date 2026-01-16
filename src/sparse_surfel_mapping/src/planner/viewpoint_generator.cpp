@@ -9,7 +9,6 @@ namespace sparse_surfel_map {
 ViewpointGenerator::ViewpointGenerator()
     : config_()
     , map_(nullptr)
-    , collision_checker_(nullptr)
     , coverage_tracker_(nullptr)
     , frontier_finder_()
     , rng_(std::random_device{}())
@@ -18,7 +17,6 @@ ViewpointGenerator::ViewpointGenerator()
 ViewpointGenerator::ViewpointGenerator(const InspectionPlannerConfig& config)
     : config_(config)
     , map_(nullptr)
-    , collision_checker_(nullptr)
     , coverage_tracker_(nullptr)
     , frontier_finder_()
     , rng_(std::random_device{}())
@@ -109,7 +107,6 @@ std::vector<Viewpoint> ViewpointGenerator::generate_continuation(const Viewpoint
 }
 
 std::vector<Viewpoint> ViewpointGenerator::build_chain(const VoxelKeySet& initial_coverage, const VoxelKeySet& seed_visible, const Eigen::Vector3f& seed_position) {
-    
     std::vector<Viewpoint> chain;
     const auto& vp_config = config_.viewpoint;
     const size_t max_chain_length = vp_config.max_chain_length;
@@ -176,9 +173,7 @@ std::vector<Viewpoint> ViewpointGenerator::build_chain(const VoxelKeySet& initia
         }
 
         // Generate viewpoint candidates for clusters
-        std::vector<Viewpoint> candidates = generate_candidates_for_clusters(
-            clusters, 
-            cumulative_coverage);
+        std::vector<Viewpoint> candidates = generate_candidates_for_clusters(clusters, cumulative_coverage);
 
         if (config_.debug_output) {
             std::cout << "  Generated " << candidates.size() << " candidates" << std::endl;
@@ -192,11 +187,7 @@ std::vector<Viewpoint> ViewpointGenerator::build_chain(const VoxelKeySet& initia
         }
 
         // Select the best candidate for this chain step
-        Viewpoint* selected = select_best_for_chain(
-            candidates,
-            cumulative_coverage,
-            previous_position,
-            chain);
+        Viewpoint* selected = select_best_for_chain(candidates, cumulative_coverage, previous_position, chain);
 
         if (!selected) {
             if (config_.debug_output) {
@@ -227,9 +218,7 @@ std::vector<Viewpoint> ViewpointGenerator::build_chain(const VoxelKeySet& initia
         }
 
         // Compute expansion center with coverage_before and selected's visible (to identify newly found)
-        expansion_center = compute_expansion_center(
-            selected->visible_voxels(),
-            coverage_before_this);
+        expansion_center = compute_expansion_center(selected->visible_voxels(), coverage_before_this);
 
         previous_position = selected->position();
 
@@ -300,7 +289,7 @@ Viewpoint ViewpointGenerator::generate_viewpoint_for_cluster(const FrontierClust
     vp.set_id(generate_id());
 
     // Try suggested position first
-    if (is_position_valid(cluster.suggested_view_position)) {
+    if (is_viewpoint_valid(vp)) {
         vp.compute_visibility(*map_, true);
         if (vp.num_visible() > 0) {
             score_viewpoint(vp, already_covered, cluster);
@@ -337,15 +326,12 @@ Viewpoint ViewpointGenerator::generate_viewpoint_for_cluster(const FrontierClust
 
         for (const auto& offset : offsets) {
             Eigen::Vector3f pos = test_pos + offset;
-            
-            if (!is_position_valid(pos)) {
+            float yaw = compute_yaw_to_target(pos, cluster.centroid);
+            Viewpoint test_vp(pos, yaw, config_.camera);
+            if (!is_viewpoint_valid(test_vp)) {
                 last_candidates_in_collision_++;
                 continue;
             }
-
-            float yaw = compute_yaw_to_target(pos, cluster.centroid);
-            
-            Viewpoint test_vp(pos, yaw, config_.camera);
             test_vp.set_id(generate_id());
             test_vp.compute_visibility(*map_, true);
 
@@ -428,34 +414,15 @@ Viewpoint* ViewpointGenerator::select_best_for_chain(std::vector<Viewpoint>& can
     return nullptr;
 }
 
-bool ViewpointGenerator::is_position_valid(const Eigen::Vector3f& position) const {
+bool ViewpointGenerator::is_viewpoint_valid(const Viewpoint& vp) const {
     const auto& vp_config = config_.viewpoint;
 
     // Minimum altitude
-    if (position.z() < 0.5f) return false;
-
-    // Collision check
-    if (collision_checker_ && collision_checker_->is_sphere_in_collision(position)) {
-        return false;
-    }
-
-    // Minimum distance to obstacles
-    if (collision_checker_) {
-        float dist = collision_checker_->distance_to_nearest_obstacle(
-            position, vp_config.min_view_distance);
-        if (dist < vp_config.min_view_distance * 0.5f) {
-            return false;
-        }
-    }
-
-    // Check if already visited (similar viewpoint within threshold position and yaw)
-    if (coverage_tracker_) {
-        Viewpoint temp_vp(position, 0.0f, config_.camera);
-        if (coverage_tracker_->is_viewpoint_visited(temp_vp)) {
-            return false;
-        }
-    }
-
+    if (vp.state().position.z() < 0.5f) return false;
+    // Collision in min_view_distance radius?
+    if (vp.is_in_collision(*map_, vp_config.min_view_distance)) return false;
+    // Similar to already visited viewpoint?
+    if (coverage_tracker_->is_viewpoint_visited(vp)) return false;
     return true;
 }
 

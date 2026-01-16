@@ -300,14 +300,49 @@ bool Viewpoint::is_similar_to(const Viewpoint& other, float pos_th, float angle_
     return yaw_diff <= angle_th_rad;
 }
 
-bool Viewpoint::is_in_collision(const SurfelMap& map, float radius)  {
-    if (map.voxels().empty()) return true;
-    
+bool Viewpoint::is_in_collision(const SurfelMap& map, float radius) const {
     const auto& voxels = map.voxels();
+    if (voxels.empty()) return true; // cant tell -> in collision
+
     const auto& nb_radius = voxels.get_neighbors_in_radius(state_.position, radius);
     if (nb_radius.size() > 0) return true; // is in collision as there are occupied voxels in
 
     return false;
+}
+
+float Viewpoint::distance_to_nearest_surface(const SurfelMap& map, float max_radius) const {
+    const auto& voxels = map.voxels();
+    if (voxels.empty()) return 0.0f;
+    
+    float min_dist = max_radius;
+    const float voxel_size = map.voxel_size();
+    const int max_voxel_radius = static_cast<int>(std::ceil(max_radius / voxel_size));
+    const VoxelKey& vp_key = voxels.point_to_key(state_.position);
+
+    for (int r = 0; r <= max_voxel_radius; ++r) {
+        bool found_in_shell = false;
+        
+        for (int dx = -r; dx <= r; ++dx) {
+            for (int dy = -r; dy <= r; ++dy) {
+                for (int dz = -r; dz <= r; ++dz) {
+                    if (std::abs(dx) != r && std::abs(dy) != r && std::abs(dz) != r) continue; // check only in shell
+
+                    VoxelKey key{vp_key.x + dx, vp_key.y + dy, vp_key.z + dz};
+                    const auto& voxel = map.get_voxel(key);
+                    if (voxel.has_value() && voxel->get().is_occupied()) {
+                        const Eigen::Vector3f center = voxel->get().center(voxel_size);
+                        const float dist = (center - state_.position).norm() - voxel_size * 0.5f;
+                        min_dist = std::min(min_dist, std::max(0.0f, dist));
+                        found_in_shell = true;
+                    }
+                }
+            }
+        }
+
+        if (found_in_shell && min_dist < (r + 1) * voxel_size) return min_dist;
+    }
+
+    return min_dist;
 }
 
 } // namespace
