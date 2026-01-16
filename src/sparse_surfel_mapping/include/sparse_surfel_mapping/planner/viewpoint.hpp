@@ -17,7 +17,6 @@ public:
     bool is_point_visible(const FrustumPlanes& frustum, const Eigen::Vector3f& point) const;
     bool is_voxel_visible(const FrustumPlanes& frustum, const Eigen::Vector3f& voxel_min, const Eigen::Vector3f& voxel_max) const;
     bool is_surfel_visible(const FrustumPlanes& frustum, const Eigen::Vector3f& camera_position, const Eigen::Vector3f& surfel_position, const Eigen::Vector3f& surfel_normal) const;
-
 private:
     void precompute();
     CameraConfig config_;
@@ -43,6 +42,7 @@ public:
     size_t compute_visibility(const SurfelMap& map, bool check_occlusion = false);
     float compute_coverage_score(const VoxelKeySet& observed_voxels);
     void compute_total_score(const VoxelKeySet& observed_voxels);
+    bool is_in_collision(const SurfelMap& map, float radius);
 
     ViewpointState& state() { return state_; }
     const ViewpointState& state() const { return state_; }

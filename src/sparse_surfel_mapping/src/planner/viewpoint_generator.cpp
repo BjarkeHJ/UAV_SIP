@@ -247,6 +247,7 @@ std::vector<Viewpoint> ViewpointGenerator::build_chain(const VoxelKeySet& initia
 
 Eigen::Vector3f ViewpointGenerator::compute_expansion_center(const VoxelKeySet& visible_voxels, const VoxelKeySet& already_covered) const {
     if (visible_voxels.empty()) {
+        std::cout << "COMPUTE EXPANSION CENTER: NO VISIBLE VOXELS!" << std::endl;
         return Eigen::Vector3f::Zero();
     }
 
@@ -447,7 +448,7 @@ bool ViewpointGenerator::is_position_valid(const Eigen::Vector3f& position) cons
         }
     }
 
-    // Check if already visited
+    // Check if already visited (similar viewpoint within threshold position and yaw)
     if (coverage_tracker_) {
         Viewpoint temp_vp(position, 0.0f, config_.camera);
         if (coverage_tracker_->is_viewpoint_visited(temp_vp)) {

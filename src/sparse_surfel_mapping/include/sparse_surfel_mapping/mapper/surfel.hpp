@@ -68,6 +68,7 @@ private:
 
     // Surfel Configuration
     SurfelConfig config_;
+
 };
 
 

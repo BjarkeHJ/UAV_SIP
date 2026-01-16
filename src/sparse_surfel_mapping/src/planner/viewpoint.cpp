@@ -239,7 +239,18 @@ size_t Viewpoint::compute_visibility(const SurfelMap& map, bool check_occlusion)
                         if (occluded) continue;
                     }
 
-                    state_.visible_voxels.insert(key);
+                    // mark center + 26-neighborhood visible (noise smoothing on visibility)
+                    for (int32_t dx = -1; dx <= 1; ++dx) {
+                        for (int32_t dy = -1; dy <= 1; ++dy) {
+                            for (int32_t dz = -1; dz <= 1; ++dz) {
+                                VoxelKey vis_key{key.x + dx, key.y + dy, key.z + dz};
+                                const auto voxel_opt = map.get_voxel(vis_key);
+                                if (voxel_opt && voxel_opt->get().is_occupied()) {
+                                    state_.visible_voxels.insert(vis_key);
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -287,6 +298,16 @@ bool Viewpoint::is_similar_to(const Viewpoint& other, float pos_th, float angle_
 
     const float angle_th_rad = angle_th * M_PI / 180.0f;
     return yaw_diff <= angle_th_rad;
+}
+
+bool Viewpoint::is_in_collision(const SurfelMap& map, float radius)  {
+    if (map.voxels().empty()) return true;
+    
+    const auto& voxels = map.voxels();
+    const auto& nb_radius = voxels.get_neighbors_in_radius(state_.position, radius);
+    if (nb_radius.size() > 0) return true; // is in collision as there are occupied voxels in
+
+    return false;
 }
 
 } // namespace

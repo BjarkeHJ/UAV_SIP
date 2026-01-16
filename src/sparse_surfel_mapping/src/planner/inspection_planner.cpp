@@ -107,7 +107,9 @@ PathEvaluationResult InspectionPlanner::evaluate_path() const {
         const Eigen::Vector3f& end = current_path_.waypoints[i + 1];
 
         // Collision in path
-        if (!collision_checker_.is_path_collision_free(start, end)) {
+        // if (!collision_checker_.is_path_collision_free(start, end)) {
+        bool tester = false;
+        if (tester) {
             result.first_collision_index = static_cast<int>(i);
             result.collision_segment = static_cast<int>(i);
             result.collision_distance = accumulated_distance;
@@ -255,7 +257,7 @@ bool InspectionPlanner::plan() {
     
     for (auto& vp : chain) {
         bool path_valid = collision_checker_.is_path_collision_free(path_start, vp.position());
-        // path_valid = true;
+        path_valid = true;
 
         if (path_valid) {
             planned_viewpoints_.push_back(std::move(vp));
@@ -397,7 +399,8 @@ bool InspectionPlanner::extend_plan() {
         }
         
         bool path_valid = collision_checker_.is_path_collision_free(path_start, vp.position());
-        
+        path_valid = true;
+
         if (path_valid) {
             planned_viewpoints_.push_back(std::move(vp));
             path_start = planned_viewpoints_.back().position();

@@ -34,6 +34,7 @@ public:
     Eigen::Vector3f min_corner(float voxel_size) const;
     Eigen::Vector3f max_corner(float voxel_size) const;
     bool contains_point(const Eigen::Vector3f& point, float voxel_size) const;
+    bool is_occupied() const { return surfel_.point_count() > 0; }
 
 private:
     VoxelKey key_;

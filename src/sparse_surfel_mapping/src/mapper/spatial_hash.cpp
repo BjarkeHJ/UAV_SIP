@@ -227,6 +227,7 @@ std::vector<std::reference_wrapper<const Voxel>> SpatialHash::get_neighbors_in_r
                 VoxelKey key{center_key.x + dx, center_key.y + dy, center_key.z + dz};
                 auto voxel = get(key); // std::optional
                 if (voxel) {
+                    // Approximate by voxel center
                     const Eigen::Vector3f voxel_center = key_to_point(key);
                     if ((voxel_center - center).squaredNorm() <= radius_sq) {
                         result.push_back(voxel.value());

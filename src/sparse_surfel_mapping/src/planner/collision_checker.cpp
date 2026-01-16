@@ -142,7 +142,7 @@ bool CollisionChecker::is_voxel_occupied(const VoxelKey& key) const {
     auto voxel_opt = map_->get_voxel(key);
     if (!voxel_opt) return false;
 
-    return voxel_opt->get().has_valid_surfel();
+    return voxel_opt->get().is_occupied();
 }
 
 VoxelKey CollisionChecker::point_to_key(const Eigen::Vector3f& point) const {
