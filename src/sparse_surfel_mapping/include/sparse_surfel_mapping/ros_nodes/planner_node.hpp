@@ -24,14 +24,16 @@ private:
     void declare_parameters();
     InspectionPlannerConfig load_configuration();
 
+    void safety_timer_callback();
     void planner_timer_callback();
 
     bool get_current_pose(Eigen::Vector3f& position, float& yaw);
     bool has_reached_target();
 
     void publish_path();
-    void publish_statistics();
+    void publish_emergency_stop();
 
+    void publish_statistics();
     void publish_fov_pointcloud();
 
     std::unique_ptr<InspectionPlanner> planner_;
@@ -41,14 +43,16 @@ private:
     std::unique_ptr<tf2_ros::TransformListener> tf_listener_;
     
     rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr path_pub_;
-    rclcpp::TimerBase::SharedPtr plan_timer_;
-
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr fov_cloud_pub_;
+    
+    rclcpp::TimerBase::SharedPtr plan_timer_;
     rclcpp::TimerBase::SharedPtr fov_timer_;
+    rclcpp::TimerBase::SharedPtr safety_timer_;
 
     std::string global_frame_;
     std::string drone_frame_;
     double planner_rate_{0.0};
+    double safety_rate_{10.0};
 
     // config
     InspectionPlannerConfig config_;
@@ -57,14 +61,17 @@ private:
     float target_reach_th_{0.5f};
     float target_yaw_th_{0.3f};
 
-    // bool is_active_{false};
     bool is_active_{true};
+    bool emergency_stop_active_{false};
     bool received_first_pose_{false};
+
     Eigen::Vector3f current_position_{Eigen::Vector3f::Zero()};
     float current_yaw_{0.0f};
 
     bool target_published_{false};
     size_t last_target_index_{0};
+
+    size_t last_path_hash_{0};
 };
 
 } // namespace

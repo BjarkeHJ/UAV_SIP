@@ -53,7 +53,7 @@ public:
     PlannerState state() const { return planner_state_; }
     
     size_t remaining_viewpoints() const { return planned_viewpoints_.size(); }
-    bool has_active_path() const { return !planned_viewpoints_.empty(); }
+    bool has_active_plan() const { return !planned_viewpoints_.empty(); }
 
     size_t committed_count() const;
     size_t uncommitted_count() const;

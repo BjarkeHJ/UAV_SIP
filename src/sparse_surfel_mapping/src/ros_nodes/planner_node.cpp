@@ -15,6 +15,13 @@ InspectionPlannerNode::InspectionPlannerNode(const rclcpp::NodeOptions& options)
 
     path_pub_ = this->create_publisher<nav_msgs::msg::Path>("inspection_planner/path", 10);
 
+    if (safety_rate_ > 0.0) {
+        safety_timer_ = this->create_wall_timer(
+            std::chrono::duration<double>(1.0 / safety_rate_),
+            std::bind(&InspectionPlannerNode::safety_timer_callback, this)
+        );
+    }
+
     if (planner_rate_ > 0.0) {
         plan_timer_ = this->create_wall_timer(
             std::chrono::duration<double>(1.0 / planner_rate_),
@@ -89,47 +96,115 @@ InspectionPlannerConfig InspectionPlannerNode::load_configuration() {
 
 void InspectionPlannerNode::planner_timer_callback() {
     if (!is_active_ || !map_) return;
+    if (emergency_stop_active_) return;
 
     if (!get_current_pose(current_position_, current_yaw_)) {
         if (!received_first_pose_) {
-            RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "Waiting for drone pose...");
+            RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000, 
+                "Waiting for drone pose...");
             return;
         }
     }
     received_first_pose_ = true;
 
-    // Lock map whilst reading map (shared_lock blocks only other writers)
     std::shared_lock lock(map_->mutex_);
 
     planner_->update_state(current_position_, current_yaw_);
 
-    if (has_reached_target()) {
-        RCLCPP_INFO(this->get_logger(), "Target Reached!");
-        planner_->mark_target_reached();
-    }
-
+    // Check inspection completion
     if (planner_->is_inspection_complete()) {
-        RCLCPP_INFO(this->get_logger(), "Inspection complete! Coverage: %.1f%%", planner_->statistics().coverage_ratio * 100.0f);
+        RCLCPP_INFO(this->get_logger(), "Inspection complete! Coverage: %.1f%%", 
+            planner_->statistics().coverage_ratio * 100.0f);
         is_active_ = false;
         lock.unlock();
         return;
     }
 
-    if (planner_->needs_replan()) {
-        RCLCPP_INFO(this->get_logger(), "Replanning...");
+    // === PLANNING LOGIC ===
+    // Priority: 
+    // 1. If no plan exists -> full replan
+    // 2. If horizon buffer low -> extend
+    // 3. Otherwise -> do nothing (already have good plan)
+    
+    bool plan_changed = false;
+
+    if (!planner_->has_active_plan()) {
+        // No plan at all - need full replan
+        RCLCPP_INFO(this->get_logger(), "No active plan - initiating full replan");
         
         if (planner_->plan()) {
-            publish_path();    
-        }
-        else {
-            RCLCPP_WARN(this->get_logger(), "Planning failed");
+            plan_changed = true;
+            RCLCPP_INFO(this->get_logger(), "Full replan succeeded: %zu viewpoints", 
+                planner_->remaining_viewpoints());
+        } else {
+            RCLCPP_WARN(this->get_logger(), "Full replan failed!");
         }
     }
-    else {
-        RCLCPP_INFO(this->get_logger(), "Executing Path...");
+    else if (planner_->needs_extension()) {
+        // Horizon buffer is low - extend the plan
+        RCLCPP_DEBUG(this->get_logger(), 
+            "Horizon buffer low (%zu uncommitted) - extending", 
+            planner_->uncommitted_count());
+        
+        if (planner_->extend_plan()) {
+            plan_changed = true;
+            RCLCPP_INFO(this->get_logger(), 
+                "Plan extended: %zu total (%zu committed, %zu uncommitted)",
+                planner_->remaining_viewpoints(),
+                planner_->committed_count(),
+                planner_->uncommitted_count());
+        }
     }
+    // else: Plan is good, nothing to do
     
-    lock.unlock(); // unlock map
+    lock.unlock();
+
+    if (plan_changed) {
+        publish_path();
+    }
+}
+
+void InspectionPlannerNode::safety_timer_callback() {
+    
+    if (!is_active_ || !map_) return;
+    if (emergency_stop_active_) return;
+
+    if (!get_current_pose(current_position_, current_yaw_)) return;
+    
+    planner_->update_state(current_position_, current_yaw_);
+    
+    if (has_reached_target()) {
+        RCLCPP_INFO(this->get_logger(), "Target reached!");
+        
+        std::shared_lock lock(map_->mutex_);
+        planner_->mark_target_reached();
+        lock.unlock();
+        
+        publish_path();
+        return;
+    }
+
+    std::shared_lock lock(map_->mutex_);
+    auto state = planner_->evaluate_and_react();
+    lock.unlock();
+    
+    if (state == InspectionPlanner::PlannerState::EMERGENCY_STOP) {
+        // !!! EMERGENCY - collision in committed path segment !!!
+        emergency_stop_active_ = true;
+        publish_emergency_stop();
+        
+        RCLCPP_ERROR(this->get_logger(), 
+            "!!! EMERGENCY STOP !!! Collision detected in committed path");
+        
+        // Deactivate normal planning
+        is_active_ = false;
+    }
+    else if (state == InspectionPlanner::PlannerState::EXTENDING) {
+        // Path was modified due to collision in uncommitted segment
+        // Publish updated path
+        publish_path();
+    }
+
 }
 
 bool InspectionPlannerNode::get_current_pose(Eigen::Vector3f& position, float& yaw) {
@@ -183,8 +258,7 @@ void InspectionPlannerNode::publish_path() {
     msg.header.frame_id = global_frame_;
     msg.header.stamp = this->get_clock()->now();
 
-    size_t path_length = path.waypoints.size();
-    if (path_length < 2) return;
+    if (path.waypoints.size() < 2) return;
 
     for (size_t i = 1; i < path.waypoints.size(); ++i) {
         geometry_msgs::msg::PoseStamped pose;
@@ -202,8 +276,15 @@ void InspectionPlannerNode::publish_path() {
         msg.poses.push_back(pose);
     }
 
-    std::cout << "[PublishPath] Path Lenght: " << msg.poses.size() << std::endl;
+    RCLCPP_DEBUG(this->get_logger(), "Publishing path with %zu waypoints", msg.poses.size());
     path_pub_->publish(msg);
+}
+
+void InspectionPlannerNode::publish_emergency_stop() {
+    nav_msgs::msg::Path empty_path;
+    empty_path.header.frame_id = global_frame_;
+    empty_path.header.stamp = this->get_clock()->now();
+    path_pub_->publish(empty_path);
 }
 
 void InspectionPlannerNode::publish_fov_pointcloud() {
