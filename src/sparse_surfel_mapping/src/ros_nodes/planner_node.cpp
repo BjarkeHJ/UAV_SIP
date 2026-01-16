@@ -4,17 +4,26 @@
 namespace sparse_surfel_map {
 
 InspectionPlannerNode::InspectionPlannerNode(const rclcpp::NodeOptions& options) : Node("inspection_planner_node", options) {
-
     declare_parameters();
-    // load config and create planner object
     config_ = load_configuration();
     planner_ = std::make_unique<InspectionPlanner>(config_);
     
+    // TF
     tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
     tf_listener_ = std::make_unique<tf2_ros::TransformListener>(*tf_buffer_);
 
-    path_pub_ = this->create_publisher<nav_msgs::msg::Path>("inspection_planner/path", 10);
+    // ACTION
+    trajectory_client_ = rclcpp_action::create_client<ExecutePath>(this, action_name_);
 
+    // PUBLISHERS
+    path_pub_ = this->create_publisher<nav_msgs::msg::Path>("inspection_planner/path", 10);
+    fov_cloud_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("inspection_planner/fov_cloud", 10);
+    fov_timer_ = this->create_wall_timer(
+        std::chrono::duration<double>(1.0 / 5.0),
+        std::bind(&InspectionPlannerNode::publish_fov_pointcloud, this)
+    );
+
+    // TIMERS
     if (safety_rate_ > 0.0) {
         safety_timer_ = this->create_wall_timer(
             std::chrono::duration<double>(1.0 / safety_rate_),
@@ -28,12 +37,6 @@ InspectionPlannerNode::InspectionPlannerNode(const rclcpp::NodeOptions& options)
             std::bind(&InspectionPlannerNode::planner_timer_callback, this)
         );
     }
-
-    fov_cloud_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("inspection_planner/fov_cloud", 10);
-    fov_timer_ = this->create_wall_timer(
-        std::chrono::duration<double>(1.0 / 5.0),
-        std::bind(&InspectionPlannerNode::publish_fov_pointcloud, this)
-    );
 
     RCLCPP_INFO(this->get_logger(), "Inspection planner node initialized");
     RCLCPP_INFO(this->get_logger(), "  Planning rate: %.2f Hz", planner_rate_); 
@@ -51,9 +54,15 @@ void InspectionPlannerNode::declare_parameters() {
     this->declare_parameter("global_frame", "odom");
     this->declare_parameter("drone_frame", "base_link");
     
+    // Action and Topics
+    this->declare_parameter("trajectory_action", "execute_path");
+
     // Rates
-    this->declare_parameter("planner_rate", 1.0);
+    this->declare_parameter("planner_rate", 2.0);
+    this->declare_parameter("safety_rate", 10.0);
     
+    // Trajectory
+
     // Target threshold
     this->declare_parameter("target_reach_th", 0.5);
     this->declare_parameter("target_yaw_th", 0.3);
@@ -83,9 +92,9 @@ void InspectionPlannerNode::declare_parameters() {
     // Load immediate parameters
     global_frame_ = this->get_parameter("global_frame").as_string();
     drone_frame_ = this->get_parameter("drone_frame").as_string();
+    action_name_ = this->get_parameter("trajectory_action").as_string();
     planner_rate_ = this->get_parameter("planner_rate").as_double();
-    target_reach_th_ = this->get_parameter("target_reach_th").as_double();
-    target_yaw_th_ = this->get_parameter("target_yaw_th").as_double();
+    safety_rate_ = this->get_parameter("safety_rate").as_double();
 }
 
 InspectionPlannerConfig InspectionPlannerNode::load_configuration() {
@@ -104,8 +113,15 @@ void InspectionPlannerNode::planner_timer_callback() {
                 "Waiting for drone pose...");
             return;
         }
+        // return;
     }
     received_first_pose_ = true;
+
+    if (!trajectory_client_->action_server_is_ready()) {
+        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
+            "Waiting for trajectory action server...");
+        return;
+    }
 
     std::shared_lock lock(map_->mutex_);
 
@@ -120,12 +136,7 @@ void InspectionPlannerNode::planner_timer_callback() {
         return;
     }
 
-    // === PLANNING LOGIC ===
-    // Priority: 
-    // 1. If no plan exists -> full replan
-    // 2. If horizon buffer low -> extend
-    // 3. Otherwise -> do nothing (already have good plan)
-    
+    // Plan
     bool plan_changed = false;
 
     if (!planner_->has_active_plan()) {
@@ -134,8 +145,9 @@ void InspectionPlannerNode::planner_timer_callback() {
         
         if (planner_->plan()) {
             plan_changed = true;
-            RCLCPP_INFO(this->get_logger(), "Full replan succeeded: %zu viewpoints", 
-                planner_->remaining_viewpoints());
+            current_plan_id_++;
+            RCLCPP_INFO(this->get_logger(), "Full replan succeeded: %zu viewpoints (plan_id=%lu)", 
+                planner_->remaining_viewpoints(), current_plan_id_);
         } else {
             RCLCPP_WARN(this->get_logger(), "Full replan failed!");
         }
@@ -144,10 +156,10 @@ void InspectionPlannerNode::planner_timer_callback() {
         // Horizon buffer is low - extend the plan
         RCLCPP_INFO(this->get_logger(), 
             "Horizon buffer low (%zu uncommitted) - extending", 
-            planner_->uncommitted_count());
+            planner_->uncommitted_count()
+        );
         
         if (planner_->extend_plan()) {
-            std::cout << "GOES HERE" << std::endl;
             plan_changed = true;
             RCLCPP_INFO(this->get_logger(), 
                 "Plan extended: %zu total (%zu committed, %zu uncommitted)",
@@ -160,16 +172,12 @@ void InspectionPlannerNode::planner_timer_callback() {
     
     lock.unlock();
 
-    if (plan_changed) {
-        std::cout << "HELLO!" << std::endl;
-        publish_path();
+    if (plan_changed || should_send_new_path()) {
+        send_path_goal();
     }
-
-    std::cout << "RUNNING!" << std::endl;
 }
 
 void InspectionPlannerNode::safety_timer_callback() {
-    
     if (!is_active_ || !map_) return;
     if (emergency_stop_active_) return;
 
@@ -177,17 +185,6 @@ void InspectionPlannerNode::safety_timer_callback() {
     
     planner_->update_state(current_position_, current_yaw_);
     
-    if (has_reached_target()) {
-        RCLCPP_INFO(this->get_logger(), "Target reached!");
-        
-        std::shared_lock lock(map_->mutex_);
-        planner_->mark_target_reached();
-        lock.unlock();
-        
-        publish_path();
-        return;
-    }
-
     std::shared_lock lock(map_->mutex_);
     auto state = planner_->evaluate_and_react();
     lock.unlock();
@@ -195,20 +192,143 @@ void InspectionPlannerNode::safety_timer_callback() {
     if (state == InspectionPlanner::PlannerState::EMERGENCY_STOP) {
         // !!! EMERGENCY - collision in committed path segment !!!
         emergency_stop_active_ = true;
-        publish_emergency_stop();
         
         RCLCPP_ERROR(this->get_logger(), 
-            "!!! EMERGENCY STOP !!! Collision detected in committed path");
-        
-        // Deactivate normal planning
+        "!!! EMERGENCY STOP !!! Collision detected in committed path");
+    
+        cancel_execution();
+        publish_emergency_stop();
         is_active_ = false;
     }
+    // else if (state == InspectionPlanner::PlannerState::EXTENDING) {
     else if (state == InspectionPlanner::PlannerState::EXECUTING) {
-        // Path was modified due to collision in uncommitted segment
-        // Publish updated path
-        publish_path();
+        // Path modified -> preempt old goal
+        send_path_goal();
+    }
+}
+
+void InspectionPlannerNode::send_path_goal() {
+    if (!planner_->has_active_plan()) {
+        RCLCPP_WARN(this->get_logger(), "Cannot send goal - no active plan");
+        return;
     }
 
+    if (waiting_for_goal_response_) {
+        RCLCPP_WARN(this->get_logger(), "Already waiting for goal response, skipping...");
+        return;
+    }
+
+    nav_msgs::msg::Path nav_path = convert_to_nav_path();
+    if (nav_path.poses.empty()) {
+        RCLCPP_WARN(this->get_logger(), "Empty path, not sending goal...");
+        return;
+    }
+
+    auto goal = ExecutePath::Goal();
+    goal.path = nav_path;
+    goal.plan_id = current_plan_id_;
+    goal.pos_tolerance = trajectory_pos_tolerance_;
+    goal.yaw_tolerance = trajectory_yaw_tolerance_;
+    goal.v_max = trajectory_v_max_;
+    goal.a_max = trajectory_a_max_;
+
+    last_sent_path_size_ = nav_path.poses.size();
+    if (!planner_->get_planned_viewpoints().empty()) {
+        last_sent_first_vp_id_ = planner_->get_planned_viewpoints().front().id();
+    }
+
+    auto send_goal_options = rclcpp_action::Client<ExecutePath>::SendGoalOptions();
+    send_goal_options.goal_response_callback = std::bind(&InspectionPlannerNode::goal_response_callback, this, std::placeholders::_1);
+    send_goal_options.feedback_callback = std::bind(&InspectionPlannerNode::feedback_callback, this, std::placeholders::_1, std::placeholders::_2);
+    send_goal_options.result_callback = std::bind(&InspectionPlannerNode::result_callback, this, std::placeholders::_1);
+
+    RCLCPP_INFO(this->get_logger(), "ExecutePath goal: plan_id=%lu, %zu waypoints, v_max=%.1f", current_plan_id_, nav_path.poses.size(), trajectory_v_max_);
+
+    waiting_for_goal_response_ = true;
+    trajectory_client_->async_send_goal(goal, send_goal_options);
+}
+
+void InspectionPlannerNode::cancel_execution() {
+    if (current_goal_handle_) {
+        RCLCPP_INFO(this->get_logger(), "Cancelling current path");
+        trajectory_client_->async_cancel_goal(current_goal_handle_);
+        current_goal_handle_.reset();
+        goal_in_progress_ = false;
+    }
+}
+
+void InspectionPlannerNode::goal_response_callback(const GoalHandleExecutePath::SharedPtr& goal_handle) {
+    waiting_for_goal_response_ = false;
+
+    if (!goal_handle) {
+        RCLCPP_ERROR(this->get_logger(), "Goal was rejected by trajectory server");
+        goal_in_progress_ = false;
+        return;
+    }
+
+    RCLCPP_INFO(this->get_logger(), "Goal accepted by trajectory server");
+    current_goal_handle_ = goal_handle;
+    goal_in_progress_ = true;
+    trajectory_active_index_ = 0;
+}
+
+void InspectionPlannerNode::feedback_callback(GoalHandleExecutePath::SharedPtr, const std::shared_ptr<const ExecutePath::Feedback> feedback) {
+    uint32_t new_index = feedback->active_index;
+    trajectory_progress_ = feedback->progress;
+    trajectory_state_ = feedback->state;
+
+    if (new_index > trajectory_active_index_) {
+        size_t viewpoints_reached = new_index - trajectory_active_index_;
+        RCLCPP_INFO(this->get_logger(), 
+            "Trajectory Feedback: index=%u->%u, progress=%.1f%%m state=%s",
+            trajectory_active_index_, new_index, trajectory_progress_ * 100.0f, trajectory_state_.c_str()
+        );
+
+        // mark visited
+        std::shared_lock lock(map_->mutex_);
+        for (size_t i = 0; i < viewpoints_reached; ++i) {
+            if (planner_->has_active_plan()) {
+                RCLCPP_INFO(this->get_logger(), "Marking viewpoints as reached (feedback index advance)");
+                planner_->mark_target_reached();
+            }
+        }
+        lock.unlock();
+    
+        trajectory_active_index_ = new_index;
+    }
+}
+
+void InspectionPlannerNode::result_callback(const GoalHandleExecutePath::WrappedResult& result) {
+    goal_in_progress_ = false;
+    current_goal_handle_.reset();
+    trajectory_active_index_ = 0;
+
+    switch (result.code) {
+        case rclcpp_action::ResultCode::SUCCEEDED:
+            RCLCPP_INFO(this->get_logger(), "Trajectory completed succesfully: %s", result.result->message.c_str());
+            if (planner_->has_active_plan()) {
+                std::shared_lock lock(map_->mutex_);
+                planner_->mark_target_reached();
+                lock.unlock();
+            }
+            break;
+
+        case rclcpp_action::ResultCode::ABORTED:
+            RCLCPP_WARN(this->get_logger(), "Trajectory aborted: %s", result.result->message.c_str());
+            break;
+        
+        case rclcpp_action::ResultCode::CANCELED:
+            RCLCPP_INFO(this->get_logger(), "Trajectory cancelled: %s", result.result->message.c_str());
+            break;
+        
+        default:
+            RCLCPP_ERROR(this->get_logger(), "Unkown trajectory result code");
+            break;
+    }
+
+    if (planner_->has_active_plan() && is_active_ && !emergency_stop_active_) {
+        RCLCPP_INFO(this->get_logger(), "Trajectory complete, checking for more waypoints...");
+    }
 }
 
 bool InspectionPlannerNode::get_current_pose(Eigen::Vector3f& position, float& yaw) {
@@ -235,53 +355,59 @@ bool InspectionPlannerNode::get_current_pose(Eigen::Vector3f& position, float& y
     }
 }
 
-bool InspectionPlannerNode::has_reached_target() {
-    const Viewpoint& target = planner_->get_next_target();
+nav_msgs::msg::Path InspectionPlannerNode::convert_to_nav_path() {
+    nav_msgs::msg::Path nav_path;
+    nav_path.header.frame_id = global_frame_;
+    nav_path.header.stamp = this->get_clock()->now();
 
-    if (target.num_visible() == 0 && target.id() == 0) {
-        return false;
+    const auto& internal_path = planner_->get_current_path();
+
+    if (!internal_path.is_valid || internal_path.waypoints.size() < 2) {
+        return nav_path;
     }
 
-    float pos_error = (current_position_ - target.position()).norm();
-    if (pos_error > target_reach_th_) return false;
-
-    float yaw_error = std::abs(current_yaw_ - target.yaw());
-    if (yaw_error > M_PI) {
-        yaw_error = 2.0f * M_PI - yaw_error;
-    }
-    if (yaw_error > target_yaw_th_) return false;
-
-    return true;
-}
-
-void InspectionPlannerNode::publish_path() {
-    const auto& path = planner_->get_current_path();
-    if (!path.is_valid) return; // maybe publish empty path?
-
-    nav_msgs::msg::Path msg;
-    msg.header.frame_id = global_frame_;
-    msg.header.stamp = this->get_clock()->now();
-
-    if (path.waypoints.size() < 2) return;
-
-    for (size_t i = 1; i < path.waypoints.size(); ++i) {
+    for (size_t i = 1; i < internal_path.waypoints.size(); ++i) {
         geometry_msgs::msg::PoseStamped pose;
-        pose.header = msg.header;
-        pose.pose.position.x = path.waypoints[i].x();
-        pose.pose.position.y = path.waypoints[i].y();
-        pose.pose.position.z = path.waypoints[i].z();
+        pose.header = nav_path.header;
+        pose.pose.position.x = internal_path.waypoints[i].x();
+        pose.pose.position.y = internal_path.waypoints[i].y();
+        pose.pose.position.z = internal_path.waypoints[i].z();
 
-        if (i < path.yaw_angles.size()) {
+        if (i < internal_path.yaw_angles.size()) {
             tf2::Quaternion q;
-            q.setRPY(0, 0, path.yaw_angles[i]);
+            q.setRPY(0, 0, internal_path.yaw_angles[i]);
             pose.pose.orientation = tf2::toMsg(q);
         }
+        else {
+            pose.pose.orientation.w = 1.0;
+        }
 
-        msg.poses.push_back(pose);
+        nav_path.poses.push_back(pose);
     }
 
-    RCLCPP_INFO(this->get_logger(), "Publishing path with %zu waypoints", msg.poses.size());
-    path_pub_->publish(msg);
+    return nav_path;
+}
+
+bool InspectionPlannerNode::should_send_new_path() const {
+    if (!planner_->has_active_plan()) return false;
+    if (waiting_for_goal_response_) return false;
+    if (!goal_in_progress_) return true;
+    
+    // Check if path has changed
+    if (!planner_->get_planned_viewpoints().empty()) {
+        uint64_t current_firts_id = planner_->get_planned_viewpoints().front().id();
+        if (current_firts_id != last_sent_first_vp_id_) {
+            return true;
+        }
+    }
+
+    // Check if path extended
+    size_t current_size = planner_->get_planned_viewpoints().size();
+    if (current_size > last_sent_path_size_ + 1) {
+        return true;
+    }
+
+    return false;
 }
 
 void InspectionPlannerNode::publish_emergency_stop() {

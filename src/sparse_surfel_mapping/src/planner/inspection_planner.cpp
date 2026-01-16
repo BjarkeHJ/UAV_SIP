@@ -148,9 +148,9 @@ InspectionPlanner::PlannerState InspectionPlanner::evaluate_and_react() {
     switch (eval.status) {
         case PathSafetyStatus::SAFE:
             planner_state_ = PlannerState::EXECUTING;
-            // if (needs_extension()) {
-            //     extend_plan();
-            // }
+            if (needs_extension()) {
+                extend_plan();
+            }
             break;
         
         case PathSafetyStatus::COLLISION_COMMITED:

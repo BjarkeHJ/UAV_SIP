@@ -23,6 +23,9 @@ find_package(pcl_conversions REQUIRED)
 find_package(PCL REQUIRED COMPONENTS common filters)
 find_package(Eigen3 REQUIRED)
 
+find_package(sip_interface REQUIRED)
+
+
 # include directories
 include_directories(
   include
@@ -47,6 +50,8 @@ set(
   tf2_eigen
   tf2_geometry_msgs
   pcl_conversions
+  
+  sip_interface
 )
 
 # main node executable

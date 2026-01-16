@@ -27,7 +27,7 @@ struct CameraConfig {
 
 struct CollisionConfig {
     float drone_radius{0.5f};
-    float safety_margin{0.5f};
+    float safety_margin{0.2f};
     float path_resolution{0.3f}; // voxel size?
     float inflation_radius() const { return drone_radius + safety_margin; }
 };
@@ -45,9 +45,9 @@ struct PathPlannerConfig {
 
 struct ViewpointConfig {
     // Viewpoint Geometry
-    float optimal_view_distance{3.0f};
-    float min_view_distance{1.5f};
-    float max_view_distance{5.0f};
+    float optimal_view_distance{1.5f};
+    float min_view_distance{1.0f};
+    float max_view_distance{3.0f};
 
     // Region growing parameters
     size_t max_chain_length{5};
@@ -55,13 +55,13 @@ struct ViewpointConfig {
 
     // Frontier clustering
     float frontier_cluster_radius{0.5f};
-    size_t min_cluster_size{5};
+    size_t min_cluster_size{1};
 
     // Coverage overlap
     float target_overlap_ratio{0.20f}; // adjacent viewpoints has ~20% surface overlap
     float min_overlap_ratio{0.10f};
     float max_overlap_ratio{0.40f};
-    float min_new_coverage_ratio{0.1f};
+    float min_new_coverage_ratio{0.01f};
 
     // Structural analysis
     bool enable_structural_analysis{true};
