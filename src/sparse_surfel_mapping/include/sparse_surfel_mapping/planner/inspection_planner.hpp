@@ -88,7 +88,6 @@ private:
     // Planning state
     std::deque<Viewpoint> planned_viewpoints_;
     InspectionPath current_path_;
-    // std::deque<ViewpointState>
     bool needs_full_replan_{true};
 
     Viewpoint invalid_viewpoint_; // return when no plan

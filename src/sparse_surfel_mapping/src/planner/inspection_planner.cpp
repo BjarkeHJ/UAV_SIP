@@ -352,6 +352,7 @@ bool InspectionPlanner::extend_plan() {
             break;
         }
         
+        // REMOVE
         bool path_valid = collision_checker_.is_path_collision_free(path_start, vp.position());
         path_valid = true;
 
