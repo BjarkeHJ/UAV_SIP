@@ -63,11 +63,6 @@ struct ViewpointConfig {
     float max_overlap_ratio{0.40f};
     float min_new_coverage_ratio{0.01f};
 
-    // Structural analysis
-    bool enable_structural_analysis{true};
-    float corner_angle_th_deg{60.0f};
-    float edge_curvature_th{0.3f};
-
     // Scoring
     float new_coverage_weight{0.5f};
     float frontier_priority_weight{0.3f};

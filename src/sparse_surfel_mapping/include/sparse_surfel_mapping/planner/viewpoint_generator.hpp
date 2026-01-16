@@ -23,10 +23,6 @@ public:
     std::vector<Viewpoint> generate_next_viewpoints(const Eigen::Vector3f& position, float yaw);
     std::vector<Viewpoint> generate_continuation(const Viewpoint& start_viewpoint);
 
-    std::vector<Viewpoint> grow_step(const VoxelKeySet& current_coverage, const Eigen::Vector3f& search_center, const VoxelKeySet& already_covered);
-    std::vector<StructuralFeature> analyze_structure(const VoxelKeySet& visible_voxels);
-    std::vector<Viewpoint> generate_for_features(const std::vector<StructuralFeature>& features, const VoxelKeySet& current_coverage);
-
     size_t last_frontiers_found() const { return last_frontiers_found_; }
     size_t last_clusters_formed() const { return last_clusters_formed_; }
     size_t last_candidates_generated() const { return last_candidates_generated_; }
