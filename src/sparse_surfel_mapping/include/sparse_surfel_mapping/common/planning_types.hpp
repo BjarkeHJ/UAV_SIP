@@ -36,12 +36,11 @@ struct ViewpointConfig {
     float max_view_distance{3.0f};
 
     // Region growing parameters
-    size_t max_chain_length{5};
     float max_expansion_radius{3.0f};
 
     // Frontier clustering
-    float frontier_cluster_radius{0.5f};
-    size_t min_cluster_size{1};
+    float frontier_cluster_radius{1.0f};
+    size_t min_cluster_size{5};
 
     // Coverage overlap
     float target_overlap_ratio{0.20f};
@@ -63,10 +62,9 @@ struct InspectionPlannerConfig {
 
     // Viewpoint Ordering
     size_t two_opt_iterations{100};
-    float two_opt_alpha{0.5f};  
 
     // Termination
-    float target_coverage_ratio{0.95f};
+    float target_coverage_ratio{0.99f};
     size_t max_total_viewpoints{1000};
 
     // Visited viewpoint tracking
@@ -170,54 +168,6 @@ struct PlanningStatistics {
     double total_planning_time_ms{0.0};
     float total_path_length{0.0f};
 };
-
-
-// struct InspectionPath {
-//     std::vector<ViewpointState> viewpoints;
-//     float total_length{0.0f};
-//     bool is_valid{false};
-
-//     size_t size() const { return viewpoints.size(); }
-//     bool empty() const { return viewpoints.empty(); }
-//     void compute_length() {
-//         total_length = 0.0f;
-//         for (size_t i = 1; i < viewpoints.size(); ++i) {
-//             const ViewpointState& state_i = viewpoints[i];
-//             const ViewpointState& state_im1 = viewpoints[i-1];
-//             total_length += (state_i.position - state_im1.position).norm();
-//         }
-//     }
-//     void clear() {
-//         viewpoints.clear();
-//         total_length = 0.0f;
-//         is_valid = false;
-//     }
-// };
-
-
-// enum class PathSafetyStatus {
-//     SAFE, // path collision-free
-//     COLLISION_COMMITED, // collision in committed segment - EMERGENCY
-//     COLLISION_UNCOMMITED, // collision in uncommitted segment - need re-extension
-//     INVALID_PATH, // path is invalid or empty
-//     NO_MAP // map not available
-// };
-
-// struct PathEvaluationResult {
-//     PathSafetyStatus status{PathSafetyStatus::INVALID_PATH};
-
-//     int first_collision_index{-1};
-//     Eigen::Vector3f collision_point{Eigen::Vector3f::Zero()};
-//     float collision_distance{std::numeric_limits<float>::infinity()};
-//     bool collision_in_commited{false};
-//     int collision_segment{-1}; // path index of start of collision segment
-//     float min_clearance{std::numeric_limits<float>::infinity()};
-//     int min_clearance_index{-1};
-
-//     bool is_safe() const { return status == PathSafetyStatus::SAFE; }
-//     bool need_emergency_stop() const { return status == PathSafetyStatus::COLLISION_COMMITED; }
-//     bool needs_reextension() const { return status == PathSafetyStatus::COLLISION_UNCOMMITED; }
-// };
 
 } // namespace
 

@@ -39,6 +39,7 @@ std::vector<Viewpoint> ViewpointGenerator::generate_viewpoints(const Viewpoint& 
         }
     }
 
+    // Build chain of viewpoints from observation prior
     std::vector<Viewpoint> new_viewpoints = build_chain(already_covered, start_viewpoint.visible_voxels(), start_viewpoint.position(), n_new);
     auto t_end = std::chrono::high_resolution_clock::now();
     last_generation_time_ms_ = std::chrono::duration<double, std::milli>(t_end - t_start).count();
@@ -53,7 +54,6 @@ std::vector<Viewpoint> ViewpointGenerator::generate_viewpoints(const Viewpoint& 
 std::vector<Viewpoint> ViewpointGenerator::build_chain(const VoxelKeySet& initial_coverage, const VoxelKeySet& seed_visible, const Eigen::Vector3f& seed_position, size_t n_new) {
     std::vector<Viewpoint> chain;
     const auto& vp_config = config_.viewpoint;
-    const size_t max_chain_length = vp_config.max_chain_length;
 
     // Initialize cumulative coverage: already covered + seed visible
     VoxelKeySet cumulative_coverage = initial_coverage;

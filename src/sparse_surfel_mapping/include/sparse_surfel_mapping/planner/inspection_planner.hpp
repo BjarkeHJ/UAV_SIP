@@ -44,38 +44,15 @@ public:
     PlannerState get_planner_state() const { return planner_state_; }
     const PlanningStatistics& statistics() const { return stats_; }
     const CoverageTracker& coverage() const { return coverage_tracker_; }
-    // // Update statuses after removal
-    // update_viewpoint_statuses();
 
     void clear_emergency(); // allow replan again
     void request_replan() { needs_replan_ = true; }
     void reset();
-
-
-    // bool extend_plan();
-    // bool needs_extension() const;
-
-    // PathEvaluationResult evaluate_path();
-    // PlannerState evaluate_and_react();
-    
-    // const Viewpoint& get_next_target() const;
-    // const InspectionPath& get_current_path() const { return current_path_; }
-    // const std::deque<Viewpoint>& get_planned_viewpoints() const { return planned_viewpoints_; }
-    // bool is_inspection_complete() const;
-    
-    // PlannerState state() const { return planner_state_; }
-    
-    // size_t remaining_viewpoints() const { return planned_viewpoints_.size(); }
-    // bool has_active_plan() const { return !planned_viewpoints_.empty(); }
-    
-    
     
 private:
     void order_viewpoints();
     float compute_travel_cost(const ViewpointState& target) const;
     void two_opt_optimize();
-    bool try_repair_viewpoint(Viewpoint& vp);
-
     void update_statistics();
     
     InspectionPlannerConfig config_;
@@ -91,8 +68,8 @@ private:
     PlannerState planner_state_{PlannerState::IDLE};
     std::deque<Viewpoint> viewpoints_;
     bool needs_replan_{true};
-
-    // detect map changes
+    
+    std::vector<ViewpointState> visited_viewpoints_; // tracking visited viewpoints
     mutable PlanningStatistics stats_;
 };
 

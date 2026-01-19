@@ -46,22 +46,30 @@ bool InspectionPlanner::validate_viewpoints() {
             continue; // not in collision risk
         }
 
+        bool repaired = false;
+
         // In collision -> Try to repair by moving agains view direction (Intuitively away from structure)
-        for (float d = voxel_size; d <= collision_radius; d+= voxel_size) {
+        for (float d = voxel_size; d <= collision_radius; d += voxel_size) {
             Eigen::Vector3f new_pos = it->position() - it->state().forward_direction() * d;
             Viewpoint test_vp(new_pos, it->yaw(), config_.camera);
-
+            
             if (!test_vp.is_in_collision(*map_, collision_radius)) {
                 it->set_position(new_pos);
-                // return true;
-                continue;
+                repaired = true;
+                break;
             }
+        }
+
+        if (repaired) {
+            ++it; // continue if repaired
+        }
+        else {
+            it = viewpoints_.erase(it);
         }
     }
 
-    return false;
+    return !viewpoints_.empty();
 }
-
 
 bool InspectionPlanner::plan() {
     if (!map_ || planner_state_ == PlannerState::EMERGENCY_STOP) return false;
@@ -81,7 +89,7 @@ bool InspectionPlanner::plan() {
             }
         }
 
-        desired_new -= viewpoints_.size(); // desired new viewpoints
+        desired_new -= viewpoints_.size() - 1; // desired new viewpoints
     }
 
     if (desired_new <= 0) return false;
@@ -93,6 +101,7 @@ bool InspectionPlanner::plan() {
         Viewpoint drone_vp(current_position_, current_yaw_, config_.camera);
         drone_vp.compute_visibility(*map_, true);
         new_vpts = viewpoint_generator_.generate_viewpoints(drone_vp, desired_new, already_observed);
+        if (!new_vpts.empty()) needs_replan_ = false;
     }
 
     // Space in current plan? Bound the number of viewpoints to optimize
@@ -105,8 +114,8 @@ bool InspectionPlanner::plan() {
     if (new_vpts.empty()) {
         if (config_.debug_output) {
             std::cout << "[InspectionPlanner] FAILED: Could not generate any new viewpoints..." << std::endl;
-            return false;
         }
+        return false;
     }
 
     // Order current viewpoints    
@@ -115,93 +124,12 @@ bool InspectionPlanner::plan() {
         viewpoints_.push_back(std::move(vp));
     }
 
+    order_viewpoints();
 
+    auto t_end = std::chrono::high_resolution_clock::now();
+    stats_.total_planning_time_ms += std::chrono::duration<double, std::milli>(t_end - t_start).count();;
 
     return true;
-
-    // // Generate viewpoint chain
-    // std::vector<Viewpoint> chain;
-
-    // if (seed_viewpoint_.has_value()) {
-    //     if (config_.debug_output) {
-    //         std::cout << "[InspectionPlanner] Generating continuation from VP " 
-    //                   << seed_viewpoint_->id() << std::endl;
-    //     }
-    //     chain = viewpoint_generator_.generate_continuation(*seed_viewpoint_);
-    // } 
-    // else {
-    //     if (config_.debug_output) {
-    //         std::cout << "[InspectionPlanner] Generating initial chain from ("
-    //                   << current_position_.transpose() << ")" << std::endl;
-    //     }
-    //     chain = viewpoint_generator_.generate_next_viewpoints(current_position_, current_yaw_);
-    // }
-
-    // if (config_.debug_output) {
-    //     std::cout << "[InspectionPlanner] ViewpointGenerator returned " 
-    //               << chain.size() << " viewpoints" << std::endl;
-    // }
-
-    // if (chain.empty()) {
-    //     if (config_.debug_output) {
-    //         std::cout << "[InspectionPlanner] No viewpoints generated" << std::endl;
-    //     }
-    //     planner_state_ = PlannerState::IDLE;
-    //     return false;
-    // }
-
-    // // Validate paths and build final chain
-    // planned_viewpoints_.clear();
-    // for (auto& vp : chain) {
-    //     if (!vp.is_in_collision(*map_, config_.viewpoint.min_view_distance)) {
-    //         planned_viewpoints_.push_back(std::move(vp));
-    //     } else {
-    //         if (config_.debug_output) {
-    //             std::cout << "[InspectionPlanner] VP " << vp.id() << " unreachable!" << std::endl;
-    //         }
-    //         stats_.viewpoints_rejected++;
-    //     }
-    // }
-
-    // if (planned_viewpoints_.empty()) {
-    //     if (config_.debug_output) {
-    //         std::cout << "[InspectionPlanner] No reachable viewpoints" << std::endl;
-    //     }
-    //     planner_state_ = PlannerState::FAILED;
-    //     return false;
-    // }
-
-    // update_viewpoint_statuses();
-    // update_path();
-
-    // stats_.viewpoints_planned = planned_viewpoints_.size();
-
-    // auto t_end = std::chrono::high_resolution_clock::now();
-    // last_plan_time_ms_ = std::chrono::duration<double, std::milli>(t_end - t_start).count();
-    // stats_.total_planning_time_ms += last_plan_time_ms_;
-
-    // planner_state_ = PlannerState::EXECUTING;
-
-    // if (config_.debug_output) {
-    //     std::cout << "[InspectionPlanner] Plan: " << planned_viewpoints_.size()
-    //               << " viewpoints in " << std::fixed << std::setprecision(2)
-    //               << last_plan_time_ms_ << " ms" << std::endl;
-        
-    //     std::cout << "Chain:" << std::endl;
-    //     for (size_t i = 0; i < planned_viewpoints_.size(); ++i) {
-    //         const auto& vp = planned_viewpoints_[i];
-    //         float dist = (i == 0) 
-    //             ? (vp.position() - current_position_).norm()
-    //             : (vp.position() - planned_viewpoints_[i-1].position()).norm();
-            
-    //         std::cout << "  [" << i << "] VP " << vp.id() 
-    //                   << " @ (" << vp.position().transpose() << ")"
-    //                   << " dist=" << std::setprecision(2) << dist << "m"
-    //                   << " visible=" << vp.num_visible() << std::endl;
-    //     }
-    // }
-
-    // return true;
 }
 
 void InspectionPlanner::order_viewpoints() {
@@ -240,6 +168,9 @@ void InspectionPlanner::mark_target_reached() {
     coverage_tracker_.record_visited_viewpoint(reached);
     stats_.viewpoints_visited++;
     
+    ViewpointState reached_state = reached.state(); // copy
+    visited_viewpoints_.push_back(reached_state); 
+    
     // Remove the reached viewpoint
     viewpoints_.pop_front();
 
@@ -250,10 +181,7 @@ void InspectionPlanner::mark_target_reached() {
     if (is_complete()) {
         planner_state_ = PlannerState::COMPLETE;
     }
-
-    // // Update statuses after removal
-    // update_viewpoint_statuses();
-
+    
     update_statistics();
 }
 
@@ -267,33 +195,6 @@ bool InspectionPlanner::is_complete() {
     if (coverage_tracker_.coverage_ratio() >= config_.target_coverage_ratio) return true;
     return false;
 }
-
-// void InspectionPlanner::update_path() {
-//     if (planned_viewpoints_.empty()) {
-//         current_path_.clear();
-//         return;
-//     }
-
-//     current_path_.clear();
-//     ViewpointState current_pose_state;
-//     current_pose_state.position = current_position_;
-//     current_pose_state.yaw = current_yaw_;
-//     current_path_.viewpoints.push_back(current_pose_state);
-
-//     for (const auto& vp : planned_viewpoints_) {
-//         current_path_.viewpoints.push_back(vp.state());
-//     }
-
-//     current_path_.compute_length();
-//     current_path_.is_valid = true;
-// }
-
-// const Viewpoint& InspectionPlanner::get_next_target() const {
-//     if (planned_viewpoints_.empty()) return invalid_viewpoint_;
-//     return planned_viewpoints_.front();
-// }
-
-
 
 void InspectionPlanner::update_statistics() {
     if (!map_) return;

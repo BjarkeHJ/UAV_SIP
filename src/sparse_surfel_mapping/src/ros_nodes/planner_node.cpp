@@ -149,13 +149,9 @@ void InspectionPlannerNode::safety_timer_callback() {
     planner_->update_pose(current_position_, current_yaw_);
 
     std::shared_lock lock(map_->mutex_);
-    bool state = planner_->validate_viewpoints();
+    planner_->validate_viewpoints();
     lock.unlock();
 
-    if (state) {
-        std::cout << "GOOD PATH" << std::endl;
-    }
-    else std::cout << "BAD PATH" << std::endl;
 }
 
 void InspectionPlannerNode::send_path_goal() {
@@ -312,31 +308,8 @@ nav_msgs::msg::Path InspectionPlannerNode::convert_to_nav_path() {
     nav_msgs::msg::Path nav_path;
     nav_path.header.frame_id = global_frame_;
     nav_path.header.stamp = this->get_clock()->now();
-
-    // const auto& internal_path = planner_->get_current_path(); // this will be rrt path??
-
-    // if (!internal_path.is_valid || internal_path.viewpoints.size() < 2) {
-    //     return nav_path;
-    // }
-
-    // for (size_t i = 1; i < internal_path.viewpoints.size(); ++i) {
-    //     const ViewpointState vpstate = internal_path.viewpoints[i];
-
-    //     geometry_msgs::msg::PoseStamped pose;
-    //     pose.header = nav_path.header;
-    //     pose.pose.position.x = vpstate.position.x();
-    //     pose.pose.position.y = vpstate.position.y();
-    //     pose.pose.position.z = vpstate.position.z();
-
-    //     tf2::Quaternion q;
-    //     q.setRPY(0, 0, vpstate.yaw);
-    //     pose.pose.orientation = tf2::toMsg(q);
-
-    //     nav_path.poses.push_back(pose);
-    // }
     
     auto internal_path = planner_->viewpoints(); // copy
-    internal_path.pop_front(); // skip first
     if (internal_path.size() < 1) return nav_path;
 
     auto it = internal_path.begin();
