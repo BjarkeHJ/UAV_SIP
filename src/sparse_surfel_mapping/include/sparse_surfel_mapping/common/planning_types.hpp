@@ -25,7 +25,7 @@ struct CameraConfig {
 
 struct CollisionConfig {
     float drone_radius{0.5f};
-    float safety_margin{0.2f};
+    float safety_margin{0.3f};
     float inflation_radius() const { return drone_radius + safety_margin; }
 };
 
