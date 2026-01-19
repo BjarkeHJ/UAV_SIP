@@ -240,18 +240,28 @@ size_t Viewpoint::compute_visibility(const SurfelMap& map, bool check_occlusion)
                         if (occluded) continue;
                     }
 
+                    state_.visible_voxels.insert(key);
+
+
                     // mark center + 26-neighborhood visible (noise smoothing on visibility)
-                    for (int32_t dx = -1; dx <= 1; ++dx) {
-                        for (int32_t dy = -1; dy <= 1; ++dy) {
-                            for (int32_t dz = -1; dz <= 1; ++dz) {
-                                VoxelKey vis_key{key.x + dx, key.y + dy, key.z + dz};
-                                const auto voxel_opt = map.get_voxel(vis_key);
-                                if (voxel_opt && voxel_opt->get().is_occupied()) {
-                                    state_.visible_voxels.insert(vis_key);
-                                }
-                            }
-                        }
-                    }
+                    // for (int32_t dx = -1; dx <= 1; ++dx) {
+                    //     for (int32_t dy = -1; dy <= 1; ++dy) {
+                    //         for (int32_t dz = -1; dz <= 1; ++dz) {
+                    //             VoxelKey vis_key{key.x + dx, key.y + dy, key.z + dz};
+                    //             const auto voxel_opt = map.get_voxel(vis_key);
+                    //             // if (voxel_opt && voxel_opt->get().is_occupied()) {
+                    //             if (voxel_opt && voxel_opt->get().has_valid_surfel()) {
+                    //                 // state_.visible_voxels.insert(vis_key);
+                    //                 const auto& surfel = voxel_opt->get().surfel();
+                    //                 if (frustum_calc_.is_surfel_visible(frustum_, state_.position, surfel.mean(), surfel.normal())) {
+                    //                     state_.visible_voxels.insert(vis_key);
+                    //                 }
+                                    
+
+                    //             }
+                    //         }
+                    //     }
+                    // }
                 }
             }
         }

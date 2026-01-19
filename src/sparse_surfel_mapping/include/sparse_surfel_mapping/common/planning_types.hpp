@@ -20,7 +20,7 @@ struct CameraConfig {
     float vfov_deg{60.0f}; 
     float min_range{0.1f};
     float max_range{10.0f};
-    float max_incidence_angle_deg{75.0f};  
+    float max_incidence_angle_deg{30.0f};  
 };
 
 struct CollisionConfig {
@@ -36,11 +36,11 @@ struct ViewpointConfig {
     float max_view_distance{3.0f};
 
     // Region growing parameters
-    float max_expansion_radius{3.0f};
+    float max_expansion_radius{10.0f};
 
     // Frontier clustering
-    float frontier_cluster_radius{1.0f};
-    size_t min_cluster_size{5};
+    float frontier_cluster_radius{0.5f};
+    size_t min_cluster_size{1};
 
     // Coverage overlap
     float target_overlap_ratio{0.20f};
@@ -52,10 +52,20 @@ struct ViewpointConfig {
     float distance_weight{0.2f};
 };
 
+struct RRTConfig {
+    float step_size{0.5f};
+    float goal_bias{0.15};
+    size_t max_iterations{500};
+    float goal_threshold{0.3f};
+    float collision_check_step{0.1f};
+    float sample_margin{3.0f}; // around start
+};
+
 struct InspectionPlannerConfig {
     CameraConfig camera;
     CollisionConfig collision;
     ViewpointConfig viewpoint;
+    RRTConfig rrt;
 
     // Planning strategy
     size_t max_viewpoints_in_plan{3};

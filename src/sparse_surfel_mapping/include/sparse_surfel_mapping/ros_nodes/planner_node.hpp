@@ -42,11 +42,13 @@ private:
     void result_callback(const GoalHandleExecutePath::WrappedResult& result);
     
     bool get_current_pose(Eigen::Vector3f& position, float& yaw);
-    nav_msgs::msg::Path convert_to_nav_path(); // internal path -> nav_msg
+    nav_msgs::msg::Path convert_to_nav_path(const RRTPath& planned_path); // internal path -> nav_msg
     bool should_send_new_path() const;
     
     void publish_emergency_stop();
     void publish_fov_pointcloud();
+
+    void process_path_progress(uint32_t new_index);
 
     std::unique_ptr<InspectionPlanner> planner_;
     SurfelMap* map_{nullptr}; // raw pointer to map ("just observing")
@@ -90,6 +92,9 @@ private:
     // Drone State
     Eigen::Vector3f current_position_{Eigen::Vector3f::Zero()};
     float current_yaw_{0.0f};
+
+    RRTPath current_planned_path_;
+    int last_completed_viewpoint_idx_{-1};
 
     uint32_t trajectory_active_index_{0};
     float trajectory_progress_{0.0f};

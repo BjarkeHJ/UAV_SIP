@@ -132,8 +132,8 @@ void InspectionPlannerNode::planner_timer_callback() {
     // Plan
     if (planner_->plan()) {
         lock.unlock();
-        send_path_goal();
-        // if (should_send_new_path()) send_path_goal();
+        // send_path_goal();
+        if (should_send_new_path()) send_path_goal();
     }
     else lock.unlock();
 
@@ -166,7 +166,14 @@ void InspectionPlannerNode::send_path_goal() {
     }
 
     // Get current path
-    nav_msgs::msg::Path nav_path = convert_to_nav_path();
+    // nav_msgs::msg::Path nav_path = convert_to_nav_path();
+    current_planned_path_ = planner_->generate_path(); // generate collision free path with rrt
+    if (current_planned_path_.empty()) {
+        RCLCPP_WARN(this->get_logger(), "Empty planned path, not sending goal...");
+        return;
+    }
+
+    nav_msgs::msg::Path nav_path = convert_to_nav_path(current_planned_path_);
 
     if (nav_path.poses.empty()) {
         RCLCPP_WARN(this->get_logger(), "Empty path, not sending goal...");
@@ -182,6 +189,8 @@ void InspectionPlannerNode::send_path_goal() {
     goal.a_max = trajectory_a_max_;
 
     last_sent_path_size_ = nav_path.poses.size();
+    last_completed_viewpoint_idx_ = -1; // reset viewpoint tracking
+
     if (!planner_->viewpoints().empty()) {
         last_sent_first_vp_id_ = planner_->viewpoints().front().id();
     }
@@ -227,23 +236,26 @@ void InspectionPlannerNode::feedback_callback(GoalHandleExecutePath::SharedPtr, 
     trajectory_state_ = feedback->state;
 
     if (new_index > trajectory_active_index_) {
-        size_t viewpoints_reached = new_index - trajectory_active_index_;
-        RCLCPP_INFO(this->get_logger(), 
-            "Trajectory Feedback: index=%u->%u, progress=%.1f%%m state=%s",
-            trajectory_active_index_, new_index, trajectory_progress_ * 100.0f, trajectory_state_.c_str()
-        );
-
-        // mark visited
-        std::shared_lock lock(map_->mutex_);
-        for (size_t i = 0; i < viewpoints_reached; ++i) {
-            if (planner_->has_plan()) {
-                RCLCPP_INFO(this->get_logger(), "Marking viewpoints as reached (feedback index advance)");
-                planner_->mark_target_reached();
-            }
-        }
-        lock.unlock();
-    
+        process_path_progress(new_index);
         trajectory_active_index_ = new_index;
+    }
+
+}
+
+void InspectionPlannerNode::process_path_progress(uint32_t new_index) {
+    // check all indices from last processed to new_index
+    for (uint32_t idx = trajectory_active_index_; idx < new_index; ++idx) {
+        int vp_idx = planner_->get_viewpoint_index_for_path_index(idx);
+        
+        if (vp_idx >= 0 && vp_idx > last_completed_viewpoint_idx_) {
+            // this was an actual viewpoint (not rrt waypoint) -> mark as visited in coverage tracker
+            RCLCPP_INFO(this->get_logger(), "Viewpoint reached!");
+            std::shared_lock lock(map_->mutex_);
+            planner_->mark_target_reached();
+            lock.unlock();
+
+            last_completed_viewpoint_idx_ = vp_idx;
+        }
     }
 }
 
@@ -256,9 +268,12 @@ void InspectionPlannerNode::result_callback(const GoalHandleExecutePath::Wrapped
         case rclcpp_action::ResultCode::SUCCEEDED:
             RCLCPP_INFO(this->get_logger(), "Trajectory completed succesfully: %s", result.result->message.c_str());
             if (planner_->has_plan()) {
-                std::shared_lock lock(map_->mutex_);
-                planner_->mark_target_reached();
-                lock.unlock();
+                int final_vp_idx = planner_->get_viewpoint_index_for_path_index(current_planned_path_.size() - 1);
+                if (final_vp_idx >= 0 && final_vp_idx > last_completed_viewpoint_idx_) {
+                    std::shared_lock lock(map_->mutex_);
+                    planner_->mark_target_reached();
+                    lock.unlock();
+                }
             }
             break;
 
@@ -267,11 +282,11 @@ void InspectionPlannerNode::result_callback(const GoalHandleExecutePath::Wrapped
             break;
         
         case rclcpp_action::ResultCode::CANCELED:
-            RCLCPP_INFO(this->get_logger(), "Trajectory cancelled: %s", result.result->message.c_str());
+            // RCLCPP_INFO(this->get_logger(), "Trajectory cancelled: %s", result.result->message.c_str());
             break;
         
         default:
-            RCLCPP_ERROR(this->get_logger(), "Unkown trajectory result code");
+            // RCLCPP_ERROR(this->get_logger(), "Unkown trajectory result code");
             break;
     }
 
@@ -304,30 +319,47 @@ bool InspectionPlannerNode::get_current_pose(Eigen::Vector3f& position, float& y
     }
 }
 
-nav_msgs::msg::Path InspectionPlannerNode::convert_to_nav_path() {
+nav_msgs::msg::Path InspectionPlannerNode::convert_to_nav_path(const RRTPath& planned_path) {
     nav_msgs::msg::Path nav_path;
     nav_path.header.frame_id = global_frame_;
     nav_path.header.stamp = this->get_clock()->now();
     
-    auto internal_path = planner_->viewpoints(); // copy
-    if (internal_path.size() < 1) return nav_path;
-
-    auto it = internal_path.begin();
-    while (it != internal_path.end()) {
-        const ViewpointState vpstate = it->state();
+    for (size_t i = 0; i < planned_path.size(); ++i) {
         geometry_msgs::msg::PoseStamped pose;
         pose.header = nav_path.header;
-        pose.pose.position.x = vpstate.position.x();
-        pose.pose.position.y = vpstate.position.y();
-        pose.pose.position.z = vpstate.position.z();
+        pose.pose.position.x = planned_path.positions[i].x();
+        pose.pose.position.y = planned_path.positions[i].y();
+        pose.pose.position.z = planned_path.positions[i].z();
 
         tf2::Quaternion q;
-        q.setRPY(0, 0, vpstate.yaw);
+        q.setRPY(0, 0, planned_path.yaws[i]);
         pose.pose.orientation = tf2::toMsg(q);
-
+        
         nav_path.poses.push_back(pose);
-        it++;
     }
+
+    // path_pub_->publish(nav_path);
+    return nav_path;
+
+    // auto internal_path = planner_->viewpoints(); // copy
+    // if (internal_path.size() < 1) return nav_path;
+
+    // auto it = internal_path.begin();
+    // while (it != internal_path.end()) {
+    //     const ViewpointState vpstate = it->state();
+    //     geometry_msgs::msg::PoseStamped pose;
+    //     pose.header = nav_path.header;
+    //     pose.pose.position.x = vpstate.position.x();
+    //     pose.pose.position.y = vpstate.position.y();
+    //     pose.pose.position.z = vpstate.position.z();
+
+    //     tf2::Quaternion q;
+    //     q.setRPY(0, 0, vpstate.yaw);
+    //     pose.pose.orientation = tf2::toMsg(q);
+
+    //     nav_path.poses.push_back(pose);
+    //     it++;
+    // }
 
     return nav_path;
 }
