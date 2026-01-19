@@ -256,12 +256,12 @@ void InspectionPlannerNode::goal_response_callback(const GoalHandleExecutePath::
     waiting_for_goal_response_ = false;
 
     if (!goal_handle) {
-        RCLCPP_ERROR(this->get_logger(), "Goal was rejected by trajectory server");
+        // RCLCPP_ERROR(this->get_logger(), "Goal was rejected by trajectory server");
         goal_in_progress_ = false;
         return;
     }
 
-    RCLCPP_INFO(this->get_logger(), "Goal accepted by trajectory server");
+    // RCLCPP_INFO(this->get_logger(), "Goal accepted by trajectory server");
     current_goal_handle_ = goal_handle;
     goal_in_progress_ = true;
     trajectory_active_index_ = 0;
@@ -362,15 +362,17 @@ nav_msgs::msg::Path InspectionPlannerNode::convert_to_nav_path() {
     }
 
     for (size_t i = 1; i < internal_path.viewpoints.size(); ++i) {
+        const ViewpointState vpstate = internal_path.viewpoints[i];
+
         geometry_msgs::msg::PoseStamped pose;
         pose.header = nav_path.header;
-        pose.pose.position.x = internal_path.viewpoints[i].position.x();
-        pose.pose.position.y = internal_path.viewpoints[i].position.y();
-        pose.pose.position.z = internal_path.viewpoints[i].position.z();
+        pose.pose.position.x = vpstate.position.x();
+        pose.pose.position.y = vpstate.position.y();
+        pose.pose.position.z = vpstate.position.z();
 
         tf2::Quaternion q;
-        q.setRPY(0, 0, internal_path.viewpoints[i].yaw);
-        pose.pose.orientation = q;
+        q.setRPY(0, 0, vpstate.yaw);
+        pose.pose.orientation = tf2::toMsg(q);
 
         nav_path.poses.push_back(pose);
     }

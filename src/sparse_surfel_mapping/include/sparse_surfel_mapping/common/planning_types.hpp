@@ -124,7 +124,9 @@ struct InspectionPath {
     void compute_length() {
         total_length = 0.0f;
         for (size_t i = 1; i < viewpoints.size(); ++i) {
-            total_length += (viewpoints[i].position - viewpoints[i-1].position).norm();
+            const ViewpointState& state_i = viewpoints[i];
+            const ViewpointState& state_im1 = viewpoints[i-1];
+            total_length += (state_i.position - state_im1.position).norm();
         }
     }
     void clear() {

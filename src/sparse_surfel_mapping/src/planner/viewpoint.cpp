@@ -326,6 +326,7 @@ float Viewpoint::distance_to_nearest_surface(const SurfelMap& map, float max_rad
         for (int dx = -r; dx <= r; ++dx) {
             for (int dy = -r; dy <= r; ++dy) {
                 for (int dz = -r; dz <= r; ++dz) {
+                    
                     if (std::abs(dx) != r && std::abs(dy) != r && std::abs(dz) != r) continue; // check only in shell
 
                     VoxelKey key{vp_key.x + dx, vp_key.y + dy, vp_key.z + dz};

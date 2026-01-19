@@ -93,6 +93,8 @@ PathEvaluationResult InspectionPlanner::evaluate_path() const {
     // TODO NEED TO EVALUATE PATH BETWEEN ALL VIEWPOINTS WITH RRT
     for (size_t i = 0; i < current_path_.viewpoints.size() - 1; ++i) {
         // Check all viewpoint for collision (before RRT local planning)
+        // const auto& vp = current_path_.viewpoints[i];
+        
     }
 
     result.status = PathSafetyStatus::SAFE;
@@ -446,10 +448,10 @@ void InspectionPlanner::update_path() {
     }
 
     current_path_.clear();
-    ViewpointState current_state;
-    current_state.position = current_position_;
-    current_state.yaw = current_yaw_;
-    current_path_.viewpoints.push_back(current_state);
+    ViewpointState current_pose_state;
+    current_pose_state.position = current_position_;
+    current_pose_state.yaw = current_yaw_;
+    current_path_.viewpoints.push_back(current_pose_state);
 
     for (const auto& vp : planned_viewpoints_) {
         current_path_.viewpoints.push_back(vp.state());
