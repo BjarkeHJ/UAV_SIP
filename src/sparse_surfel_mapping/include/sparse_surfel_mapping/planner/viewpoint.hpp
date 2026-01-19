@@ -47,6 +47,7 @@ public:
 
     ViewpointState& state() { return state_; }
     const ViewpointState& state() const { return state_; }
+    
     // convenience accessors
     const Eigen::Vector3f& position() const { return state_.position; }
     float yaw() const { return state_.yaw; }
@@ -79,13 +80,6 @@ private:
     FrustumCalculator frustum_calc_;
     FrustumPlanes frustum_;
     bool frustum_computed_{false};
-};
-
-// for viewpoint priority ordering
-struct ViewpointComparator {
-    bool operator()(const Viewpoint& a, const Viewpoint& b) const {
-        return a.total_score() < b.total_score();
-    }
 };
 
 } // namespace

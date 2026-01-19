@@ -142,6 +142,7 @@ bool FrustumCalculator::is_surfel_visible(const FrustumPlanes& frustum, const Ei
 
 // --- VIEWPOINT ---
 Viewpoint::Viewpoint() : state_(), frustum_calc_(), frustum_(), frustum_computed_(false) {}
+
 Viewpoint::Viewpoint(const Eigen::Vector3f& position, float yaw, const CameraConfig& camera_config) 
     : state_()
     , frustum_calc_(camera_config)

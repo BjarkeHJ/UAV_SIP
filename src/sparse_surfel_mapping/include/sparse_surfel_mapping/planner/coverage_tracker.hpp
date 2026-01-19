@@ -36,8 +36,6 @@ public:
     const PlanningStatistics& stats() const { return stats_; }
     PlanningStatistics& stats() { return stats_; }
     float coverage_ratio() const { return stats_.coverage_ratio; }
-
-    std::vector<ViewpointState> find_nearest_visited(const Eigen::Vector3f& position, size_t n) const;
     
     float get_local_coverage_ratio(const VoxelKeySet& local_voxels) const;
 

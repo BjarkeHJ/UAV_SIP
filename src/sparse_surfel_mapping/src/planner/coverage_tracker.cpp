@@ -84,28 +84,6 @@ void CoverageTracker::reset() {
     stats_ = PlanningStatistics();
 }
 
-std::vector<ViewpointState> CoverageTracker::find_nearest_visited(const Eigen::Vector3f& position, size_t n) const {
-    if (visited_viewpoints_.empty() || n == 0) return {};
-
-    std::vector<std::pair<float, size_t>> distances;
-    distances.reserve(visited_viewpoints_.size());
-
-    for (size_t i = 0; i < visited_viewpoints_.size(); ++i) {
-        float dist = (visited_viewpoints_[i].position - position).norm();
-        distances.emplace_back(dist, i);
-    }
-
-    const size_t k = std::min(n, distances.size());
-    std::partial_sort(distances.begin(), distances.begin() + k, distances.end());
-    std::vector<ViewpointState> result;
-    result.reserve(k);
-    for (size_t i = 0; i < k; ++i) {
-        result.push_back(visited_viewpoints_[distances[i].second]);
-    }
-
-    return result;
-}
-
 float CoverageTracker::get_local_coverage_ratio(const VoxelKeySet& local_voxels) const {
     if (local_voxels.empty()) return 0.0f;
 

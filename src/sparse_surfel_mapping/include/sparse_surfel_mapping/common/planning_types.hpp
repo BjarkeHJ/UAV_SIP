@@ -114,6 +114,50 @@ struct ViewpointState {
     }
 };
 
+struct InspectionPath {
+    std::vector<ViewpointState> viewpoints;
+    float total_length{0.0f};
+    bool is_valid{false};
+
+    size_t size() const { return viewpoints.size(); }
+    bool empty() const { return viewpoints.empty(); }
+    void compute_length() {
+        total_length = 0.0f;
+        for (size_t i = 1; i < viewpoints.size(); ++i) {
+            total_length += (viewpoints[i].position - viewpoints[i-1].position).norm();
+        }
+    }
+    void clear() {
+        viewpoints.clear();
+        total_length = 0.0f;
+        is_valid = false;
+    }
+};
+
+enum class PathSafetyStatus {
+    SAFE, // path collision-free
+    COLLISION_COMMITED, // collision in committed segment - EMERGENCY
+    COLLISION_UNCOMMITED, // collision in uncommitted segment - need re-extension
+    INVALID_PATH, // path is invalid or empty
+    NO_MAP // map not available
+};
+
+struct PathEvaluationResult {
+    PathSafetyStatus status{PathSafetyStatus::INVALID_PATH};
+
+    int first_collision_index{-1};
+    Eigen::Vector3f collision_point{Eigen::Vector3f::Zero()};
+    float collision_distance{std::numeric_limits<float>::infinity()};
+    bool collision_in_commited{false};
+    int collision_segment{-1}; // path index of start of collision segment
+    float min_clearance{std::numeric_limits<float>::infinity()};
+    int min_clearance_index{-1};
+
+    bool is_safe() const { return status == PathSafetyStatus::SAFE; }
+    bool need_emergency_stop() const { return status == PathSafetyStatus::COLLISION_COMMITED; }
+    bool needs_reextension() const { return status == PathSafetyStatus::COLLISION_UNCOMMITED; }
+};
+
 struct FrustumPlanes {
     // a plane is stored as the normal + the plane thickness
     // plane equation then says normal.dot(point) + d >= 0 means inside plane
@@ -168,56 +212,6 @@ struct FrontierCluster {
         mean_normal.normalize();
     }
 };
-
-struct InspectionPath {
-    std::vector<Eigen::Vector3f> waypoints;
-    std::vector<float> yaw_angles;
-    float total_length{0.0f};
-    bool is_valid{false};
-
-    size_t size() const { return waypoints.size(); }
-    bool empty() const { return waypoints.empty(); }
-
-    void compute_length() {
-        total_length = 0.0f;
-        for (size_t i = 1; i < waypoints.size(); ++i) {
-            total_length += (waypoints[i] - waypoints[i-1]).norm();
-        }
-    }
-
-    void clear() {
-        waypoints.clear();
-        yaw_angles.clear();
-        total_length = 0.0f;
-        is_valid = false;
-    }
-};
-
-enum class PathSafetyStatus {
-    SAFE, // path collision-free
-    COLLISION_COMMITED, // collision in committed segment - EMERGENCY
-    COLLISION_UNCOMMITED, // collision in uncommitted segment - need re-extension
-    INVALID_PATH, // path is invalid or empty
-    NO_MAP // map not available
-};
-
-struct PathEvaluationResult {
-    PathSafetyStatus status{PathSafetyStatus::INVALID_PATH};
-
-    int first_collision_index{-1};
-    Eigen::Vector3f collision_point{Eigen::Vector3f::Zero()};
-    float collision_distance{std::numeric_limits<float>::infinity()};
-    bool collision_in_commited{false};
-    int collision_segment{-1}; // path index of start of collision segment
-    float min_clearance{std::numeric_limits<float>::infinity()};
-    int min_clearance_index{-1};
-
-    bool is_safe() const { return status == PathSafetyStatus::SAFE; }
-    bool need_emergency_stop() const { return status == PathSafetyStatus::COLLISION_COMMITED; }
-    bool needs_reextension() const { return status == PathSafetyStatus::COLLISION_UNCOMMITED; }
-};
-
-
 
 // Statistics
 struct PlanningStatistics {

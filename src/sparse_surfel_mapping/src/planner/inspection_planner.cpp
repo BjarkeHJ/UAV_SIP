@@ -9,7 +9,6 @@ namespace sparse_surfel_map {
 InspectionPlanner::InspectionPlanner()
     : config_()
     , coverage_tracker_()
-    , collision_checker_()
     , viewpoint_generator_()
     , planner_state_(PlannerState::IDLE)
 {}
@@ -17,7 +16,6 @@ InspectionPlanner::InspectionPlanner()
 InspectionPlanner::InspectionPlanner(const InspectionPlannerConfig& config)
     : config_(config)
     , coverage_tracker_(config)
-    , collision_checker_(config.collision, nullptr)
     , viewpoint_generator_(config)
     , planner_state_(PlannerState::IDLE)
 {}
@@ -35,7 +33,6 @@ void InspectionPlanner::initialize(SurfelMap* map) {
 }
 
 void InspectionPlanner::initialize_components() {
-    collision_checker_.set_map(map_);
     viewpoint_generator_.set_map(map_);
     viewpoint_generator_.set_coverage_tracker(&coverage_tracker_);
 }
@@ -48,10 +45,6 @@ void InspectionPlanner::update_state(const Eigen::Vector3f& position, float yaw)
     if (map_) {
         coverage_tracker_.update_statistics(map_->num_valid_surfels());
     }
-}
-
-void InspectionPlanner::update_state(const ViewpointState& current_state) {
-    update_state(current_state.position, current_state.yaw);
 }
 
 size_t InspectionPlanner::commit_index() const {
@@ -92,13 +85,13 @@ PathEvaluationResult InspectionPlanner::evaluate_path() const {
         return result;
     }
 
-    if (current_path_.waypoints.size() < 2) {
+    if (current_path_.viewpoints.size() < 2) {
         result.status = PathSafetyStatus::INVALID_PATH;
         return result;
     }
 
-    // TODO NEED TO EVALUATE PATH BETWEEN ALL VIEWPOINTS
-    for (size_t i = 0; i < current_path_.waypoints.size() - 1; ++i) {
+    // TODO NEED TO EVALUATE PATH BETWEEN ALL VIEWPOINTS WITH RRT
+    for (size_t i = 0; i < current_path_.viewpoints.size() - 1; ++i) {
         // Check all viewpoint for collision (before RRT local planning)
     }
 
@@ -133,7 +126,7 @@ InspectionPlanner::PlannerState InspectionPlanner::evaluate_and_react() {
                 std::cout << "[InspectionPlanner] Collision in uncommitted segment " 
                           << eval.collision_segment << " - regenerating" << std::endl;
             }
-            regenerate_from_commit_horizon();
+            extend_plan();
             break;
         
         case PathSafetyStatus::INVALID_PATH:
@@ -353,8 +346,7 @@ bool InspectionPlanner::extend_plan() {
         }
         
         // REMOVE
-        bool path_valid = collision_checker_.is_path_collision_free(path_start, vp.position());
-        path_valid = true;
+        bool path_valid = true;
 
         if (path_valid) {
             planned_viewpoints_.push_back(std::move(vp));
@@ -384,17 +376,6 @@ bool InspectionPlanner::extend_plan() {
     
     planner_state_ = PlannerState::EXECUTING;
     return true;
-}
-
-bool InspectionPlanner::regenerate_from_commit_horizon() {
-    // This is called when there's a collision in the uncommitted segment
-    // We remove uncommitted viewpoints and regenerate
-    
-    if (config_.debug_output) {
-        std::cout << "[InspectionPlanner] Regenerating from commit horizon" << std::endl;
-    }
-    
-    return extend_plan();  // extend_plan already handles removing uncommitted and regenerating
 }
 
 void InspectionPlanner::mark_target_reached() {
@@ -465,12 +446,13 @@ void InspectionPlanner::update_path() {
     }
 
     current_path_.clear();
-    current_path_.waypoints.push_back(current_position_);
-    current_path_.yaw_angles.push_back(current_yaw_);
-    
+    ViewpointState current_state;
+    current_state.position = current_position_;
+    current_state.yaw = current_yaw_;
+    current_path_.viewpoints.push_back(current_state);
+
     for (const auto& vp : planned_viewpoints_) {
-        current_path_.waypoints.push_back(vp.position());
-        current_path_.yaw_angles.push_back(vp.yaw());
+        current_path_.viewpoints.push_back(vp.state());
     }
 
     current_path_.compute_length();

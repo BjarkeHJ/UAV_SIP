@@ -9,7 +9,6 @@
 #include "sparse_surfel_mapping/planner/viewpoint.hpp"
 #include "sparse_surfel_mapping/planner/viewpoint_generator.hpp"
 #include "sparse_surfel_mapping/planner/coverage_tracker.hpp"
-#include "sparse_surfel_mapping/planner/collision_checker.hpp"
 
 namespace sparse_surfel_map {
 
@@ -33,7 +32,6 @@ public:
     void initialize(SurfelMap* map);
 
     void update_state(const Eigen::Vector3f& position, float yaw); // update drone state
-    void update_state(const ViewpointState& current_state);
     
     bool plan();
     bool extend_plan();
@@ -63,7 +61,6 @@ public:
     void reset();
 
     const CoverageTracker& coverage_tracker() const { return coverage_tracker_; }
-    const CollisionChecker& collision_checker() const { return collision_checker_; }
     const ViewpointGenerator& viewpoint_generator() const { return viewpoint_generator_; }
     
 private:
@@ -71,11 +68,9 @@ private:
     void update_statistics();
     void update_path();
     void update_viewpoint_statuses();
-    bool regenerate_from_commit_horizon(); // remove uncommitted and regenerate
 
     InspectionPlannerConfig config_;
     CoverageTracker coverage_tracker_;
-    CollisionChecker collision_checker_;
     ViewpointGenerator viewpoint_generator_;
     
     SurfelMap* map_{nullptr};

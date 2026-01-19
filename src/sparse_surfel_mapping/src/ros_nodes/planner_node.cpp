@@ -106,9 +106,8 @@ void InspectionPlannerNode::planner_timer_callback() {
         if (!received_first_pose_) {
             RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000, 
                 "Waiting for drone pose...");
-            return;
         }
-        // return;
+        return;
     }
     received_first_pose_ = true;
 
@@ -119,7 +118,6 @@ void InspectionPlannerNode::planner_timer_callback() {
     }
 
     std::shared_lock lock(map_->mutex_);
-
     planner_->update_state(current_position_, current_yaw_);
 
     // Check inspection completion
@@ -213,7 +211,9 @@ void InspectionPlannerNode::send_path_goal() {
         return;
     }
 
+    // Get current path
     nav_msgs::msg::Path nav_path = convert_to_nav_path();
+
     if (nav_path.poses.empty()) {
         RCLCPP_WARN(this->get_logger(), "Empty path, not sending goal...");
         return;
@@ -357,25 +357,20 @@ nav_msgs::msg::Path InspectionPlannerNode::convert_to_nav_path() {
 
     const auto& internal_path = planner_->get_current_path();
 
-    if (!internal_path.is_valid || internal_path.waypoints.size() < 2) {
+    if (!internal_path.is_valid || internal_path.viewpoints.size() < 2) {
         return nav_path;
     }
 
-    for (size_t i = 1; i < internal_path.waypoints.size(); ++i) {
+    for (size_t i = 1; i < internal_path.viewpoints.size(); ++i) {
         geometry_msgs::msg::PoseStamped pose;
         pose.header = nav_path.header;
-        pose.pose.position.x = internal_path.waypoints[i].x();
-        pose.pose.position.y = internal_path.waypoints[i].y();
-        pose.pose.position.z = internal_path.waypoints[i].z();
+        pose.pose.position.x = internal_path.viewpoints[i].position.x();
+        pose.pose.position.y = internal_path.viewpoints[i].position.y();
+        pose.pose.position.z = internal_path.viewpoints[i].position.z();
 
-        if (i < internal_path.yaw_angles.size()) {
-            tf2::Quaternion q;
-            q.setRPY(0, 0, internal_path.yaw_angles[i]);
-            pose.pose.orientation = tf2::toMsg(q);
-        }
-        else {
-            pose.pose.orientation.w = 1.0;
-        }
+        tf2::Quaternion q;
+        q.setRPY(0, 0, internal_path.viewpoints[i].yaw);
+        pose.pose.orientation = q;
 
         nav_path.poses.push_back(pose);
     }
