@@ -37,7 +37,7 @@ public:
     bool extend_plan();
     bool needs_extension() const;
 
-    PathEvaluationResult evaluate_path() const;
+    PathEvaluationResult evaluate_path();
     PlannerState evaluate_and_react();
     void clear_emergency(); // allow replan again
 

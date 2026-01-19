@@ -63,7 +63,7 @@ public:
 
 private:
     VoxelMap voxels_; // hash map storage
-    size_t voxel_size_; // voxel size (map resolution)
+    float voxel_size_; // voxel size (map resolution)
     SurfelConfig surfel_config_; // surfel config
 };
 

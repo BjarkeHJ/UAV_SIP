@@ -237,7 +237,7 @@ void InspectionPlannerNode::send_path_goal() {
     send_goal_options.feedback_callback = std::bind(&InspectionPlannerNode::feedback_callback, this, std::placeholders::_1, std::placeholders::_2);
     send_goal_options.result_callback = std::bind(&InspectionPlannerNode::result_callback, this, std::placeholders::_1);
 
-    RCLCPP_INFO(this->get_logger(), "ExecutePath goal: plan_id=%lu, %zu waypoints, v_max=%.1f", current_plan_id_, nav_path.poses.size(), trajectory_v_max_);
+    // RCLCPP_INFO(this->get_logger(), "ExecutePath goal: plan_id=%lu, %zu waypoints, v_max=%.1f", current_plan_id_, nav_path.poses.size(), trajectory_v_max_);
 
     waiting_for_goal_response_ = true;
     trajectory_client_->async_send_goal(goal, send_goal_options);
@@ -309,7 +309,7 @@ void InspectionPlannerNode::result_callback(const GoalHandleExecutePath::Wrapped
             break;
 
         case rclcpp_action::ResultCode::ABORTED:
-            RCLCPP_WARN(this->get_logger(), "Trajectory aborted: %s", result.result->message.c_str());
+            // RCLCPP_WARN(this->get_logger(), "Trajectory aborted: %s", result.result->message.c_str());
             break;
         
         case rclcpp_action::ResultCode::CANCELED:
@@ -322,7 +322,7 @@ void InspectionPlannerNode::result_callback(const GoalHandleExecutePath::Wrapped
     }
 
     if (planner_->has_active_plan() && is_active_ && !emergency_stop_active_) {
-        RCLCPP_INFO(this->get_logger(), "Trajectory complete, checking for more waypoints...");
+        // RCLCPP_INFO(this->get_logger(), "Trajectory complete, checking for more waypoints...");
     }
 }
 

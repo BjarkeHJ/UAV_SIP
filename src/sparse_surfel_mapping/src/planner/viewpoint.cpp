@@ -306,6 +306,7 @@ bool Viewpoint::is_in_collision(const SurfelMap& map, float radius) const {
     if (voxels.empty()) return true; // cant tell -> in collision
 
     const auto& nb_radius = voxels.get_neighbors_in_radius(state_.position, radius);
+    std::cout << nb_radius.size() << std::endl;
     if (nb_radius.size() > 0) return true; // is in collision as there are occupied voxels in
 
     return false;

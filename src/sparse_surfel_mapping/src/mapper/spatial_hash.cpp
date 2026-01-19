@@ -198,6 +198,7 @@ std::vector<std::reference_wrapper<const Voxel>> SpatialHash::get_neighbors_26(c
     for (int32_t dx = -1; dx <= 1; ++dx) {
         for (int32_t dy = -1; dy <= 1; ++dy) {
             for (int32_t dz = -1; dz <= 1; ++dz) {
+
                 if (dz == 0 && dy == 0 && dz == 0) continue; // skip center (self)
 
                 VoxelKey nb_key{key.x + dx, key.y + dy, key.z + dz};
@@ -226,7 +227,7 @@ std::vector<std::reference_wrapper<const Voxel>> SpatialHash::get_neighbors_in_r
 
                 VoxelKey key{center_key.x + dx, center_key.y + dy, center_key.z + dz};
                 auto voxel = get(key); // std::optional
-                if (voxel) {
+                if (voxel && voxel->get().is_occupied()) {
                     // Approximate by voxel center
                     const Eigen::Vector3f voxel_center = key_to_point(key);
                     if ((voxel_center - center).squaredNorm() <= radius_sq) {

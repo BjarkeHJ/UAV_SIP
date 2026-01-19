@@ -76,7 +76,7 @@ void InspectionPlanner::update_viewpoint_statuses() {
     }
 }
 
-PathEvaluationResult InspectionPlanner::evaluate_path() const {
+PathEvaluationResult InspectionPlanner::evaluate_path() {
     PathEvaluationResult result;
     stats_.path_evaluations++;
 
@@ -85,17 +85,29 @@ PathEvaluationResult InspectionPlanner::evaluate_path() const {
         return result;
     }
 
-    if (current_path_.viewpoints.size() < 2) {
+    if (planned_viewpoints_.size() < 2) {
         result.status = PathSafetyStatus::INVALID_PATH;
         return result;
     }
 
-    // TODO NEED TO EVALUATE PATH BETWEEN ALL VIEWPOINTS WITH RRT
-    for (size_t i = 0; i < current_path_.viewpoints.size() - 1; ++i) {
-        // Check all viewpoint for collision (before RRT local planning)
-        // const auto& vp = current_path_.viewpoints[i];
-        
+    const float collision_radius = config_.collision.inflation_radius();
+    
+    for (auto& vp : planned_viewpoints_) {
+        if (vp.is_in_collision(*map_, collision_radius)) {
+            // Move backward
+            std::cout << "OH SHIT COLLISION!" << std::endl;
+
+            ViewpointState& state = vp.state();
+            state.position = state.position - state.forward_direction() * collision_radius;
+            if (vp.is_in_collision(*map_, collision_radius)) {
+                vp.set_status(ViewpointStatus::UNREACHABLE);
+                std::cout << "OH SHIT COLLISION - AFTER MOVE!" << std::endl;
+                continue;
+            }
+            vp.set_status(ViewpointStatus::ACTIVE);
+        }
     }
+
 
     result.status = PathSafetyStatus::SAFE;
     return result;
