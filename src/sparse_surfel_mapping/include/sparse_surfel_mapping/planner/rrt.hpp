@@ -28,7 +28,7 @@ private:
         int parent = -1;
     };
 
-    bool is_collison_free(const Eigen::Vector3f& point) const;
+    bool is_collision_free(const Eigen::Vector3f& point) const;
     bool is_edge_free(const Eigen::Vector3f& from, const Eigen::Vector3f& to) const;
 
     Eigen::Vector3f sample(const Eigen::Vector3f& min_bound, const Eigen::Vector3f& max_bound);

@@ -42,7 +42,7 @@ std::vector<Eigen::Vector3f> RRTPlanner::plan(const Eigen::Vector3f& start, cons
         Eigen::Vector3f new_pos = steer(tree[nearest_idx].position, sample_point);
 
         // check if new pos is valid
-        if (!is_collison_free(new_pos)) continue;
+        if (!is_collision_free(new_pos)) continue;
         if (!is_edge_free(tree[nearest_idx].position, new_pos)) continue;
 
         // add to tree
@@ -95,7 +95,7 @@ std::vector<Eigen::Vector3f> RRTPlanner::simplify_path(const std::vector<Eigen::
     return simplified;
 }
 
-bool RRTPlanner::is_collison_free(const Eigen::Vector3f& point) const {
+bool RRTPlanner::is_collision_free(const Eigen::Vector3f& point) const {
     if (!map_) return false;
 
     const auto& voxels = map_->voxels();
@@ -108,7 +108,7 @@ bool RRTPlanner::is_edge_free(const Eigen::Vector3f& from, const Eigen::Vector3f
 
     Eigen::Vector3f direction = to - from;
     float length = direction.norm();
-    if (length < 1e-6f) return is_collison_free(from);
+    if (length < 1e-6f) return is_collision_free(from);
 
     direction /= length;
     int num_checks = static_cast<int>(std::ceil(length / config_.collision_check_step));
@@ -116,7 +116,7 @@ bool RRTPlanner::is_edge_free(const Eigen::Vector3f& from, const Eigen::Vector3f
     for (int i = 0; i <= num_checks; ++i) {
         float t = static_cast<float>(i) / num_checks;
         Eigen::Vector3f point = from + direction * (t * length);
-        if (is_collison_free(point)) return false;
+        if (!is_collision_free(point)) return false;
     }
 
     return true;
