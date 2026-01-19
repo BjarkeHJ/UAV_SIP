@@ -27,86 +27,30 @@ void ViewpointGenerator::set_map(const SurfelMap* map) {
     frontier_finder_.set_map(map);
 }
 
-std::vector<Viewpoint> ViewpointGenerator::generate_next_viewpoints(const Eigen::Vector3f& position, float yaw) {
-    auto t_start = std::chrono::high_resolution_clock::now();
-    
+std::vector<Viewpoint> ViewpointGenerator::generate_viewpoints(const Viewpoint& start_viewpoint, size_t n_new, const VoxelKeySet& current_obs) {
     if (!map_) return {};
+    auto t_start = std::chrono::high_resolution_clock::now();
 
-    // Reset debug counters
-    last_frontiers_found_ = 0;
-    last_clusters_formed_ = 0;
-    last_candidates_generated_ = 0;
-    last_candidates_in_collision_ = 0;
-
-    // Get globally observed voxels
-    VoxelKeySet already_covered;
-    if (coverage_tracker_) {
-        already_covered = coverage_tracker_->observed_voxels();
+    // Create observation initial
+    VoxelKeySet already_covered = coverage_tracker_->observed_voxels(); // actual seen voxels
+    if (!current_obs.empty()) {
+        for (const auto& key : current_obs) {
+            already_covered.insert(key); // estimate from previous viewpoints if chaining
+        }
     }
 
-    // Compute seed observation from current
-    Viewpoint seed_observation(position, yaw, config_.camera);
-    seed_observation.compute_visibility(*map_, false);
-
-    if (config_.debug_output) {
-        std::cout << "[ViewpointGenerator] Seed observation at (" 
-                  << position.transpose() << ") yaw=" 
-                  << yaw * 180.0f / M_PI << "°" << std::endl;
-        std::cout << "  Sees " << seed_observation.num_visible() << " voxels" << std::endl;
-    }
-
-    // Build the chain
-    std::vector<Viewpoint> chain = build_chain(already_covered, seed_observation.visible_voxels(), position);
-
+    std::vector<Viewpoint> new_viewpoints = build_chain(already_covered, start_viewpoint.visible_voxels(), start_viewpoint.position(), n_new);
     auto t_end = std::chrono::high_resolution_clock::now();
     last_generation_time_ms_ = std::chrono::duration<double, std::milli>(t_end - t_start).count();
-
-    if (config_.debug_output) {
-        std::cout << "[ViewpointGenerator] Generated chain of " << chain.size() 
-                  << " viewpoints in " << last_generation_time_ms_ << " ms" << std::endl;
-    }
-
-    return chain;
-}
-
-std::vector<Viewpoint> ViewpointGenerator::generate_continuation(const Viewpoint& start_viewpoint) {
-    auto t_start = std::chrono::high_resolution_clock::now();
     
-    // NOTE: THIS COULD BE THE ONYL GENERATE FUNCTION (ASSUMING A START VIEWPOINT CAN ALWAYS BE GENERATED FROM DRONE)
-
-    if (!map_) return {};
-
-    last_frontiers_found_ = 0;
-    last_clusters_formed_ = 0;
-    last_candidates_generated_ = 0;
-    last_candidates_in_collision_ = 0;
-
-    // Get globally observed voxels (includes the reached viewpoint)
-    VoxelKeySet already_covered;
-    if (coverage_tracker_) {
-        already_covered = coverage_tracker_->observed_voxels();
-    }
-
     if (config_.debug_output) {
-        std::cout << "[ViewpointGenerator] Continuing from VP " << start_viewpoint.id()
-                  << " at (" << start_viewpoint.position().transpose() << ")" << std::endl;
+        std::cout << "[ViewpointGenerator] Viewpoint Chain: " << new_viewpoints.size() << " viewpoints in " << last_generation_time_ms_ << " ms" << std::endl;
     }
 
-    // Build chain starting from reached viewpoint
-    std::vector<Viewpoint> chain = build_chain(already_covered, start_viewpoint.visible_voxels(), start_viewpoint.position());
-
-    auto t_end = std::chrono::high_resolution_clock::now();
-    last_generation_time_ms_ = std::chrono::duration<double, std::milli>(t_end - t_start).count();
-
-    if (config_.debug_output) {
-        std::cout << "[ViewpointGenerator] Continuation chain: " << chain.size() 
-                  << " viewpoints in " << last_generation_time_ms_ << " ms" << std::endl;
-    }
-
-    return chain;
+    return new_viewpoints;
 }
 
-std::vector<Viewpoint> ViewpointGenerator::build_chain(const VoxelKeySet& initial_coverage, const VoxelKeySet& seed_visible, const Eigen::Vector3f& seed_position) {
+std::vector<Viewpoint> ViewpointGenerator::build_chain(const VoxelKeySet& initial_coverage, const VoxelKeySet& seed_visible, const Eigen::Vector3f& seed_position, size_t n_new) {
     std::vector<Viewpoint> chain;
     const auto& vp_config = config_.viewpoint;
     const size_t max_chain_length = vp_config.max_chain_length;
@@ -121,49 +65,24 @@ std::vector<Viewpoint> ViewpointGenerator::build_chain(const VoxelKeySet& initia
     Eigen::Vector3f expansion_center = compute_expansion_center(seed_visible, initial_coverage);
     Eigen::Vector3f previous_position = seed_position;
 
-    if (config_.debug_output) {
-        std::cout << "  Initial expansion center: (" << expansion_center.transpose() << ")" << std::endl;
-        std::cout << "  Cumulative coverage: " << cumulative_coverage.size() << " voxels" << std::endl;
-    }
-
-    // Iteratively build the chain
-    for (size_t i = 0; i < max_chain_length; ++i) {
+    // Iteratively build the chain based on a desired number of new viewpoints
+    for (size_t i = 0; i < n_new; ++i) {
         if (config_.debug_output) {
             std::cout << "\n  === Chain Step " << (i + 1) << " ===" << std::endl;
             std::cout << "  Expansion center: (" << expansion_center.transpose() << ")" << std::endl;
         }
 
         // Find frontiers from coverage boundary (set-based, centered on expansion)
-        std::vector<FrontierSurfel> frontiers = frontier_finder_.find_frontiers_from_coverage(
-            cumulative_coverage,
-            expansion_center,
-            vp_config.max_expansion_radius);
+        std::vector<FrontierSurfel> frontiers = frontier_finder_.find_frontiers_from_coverage(cumulative_coverage, expansion_center, vp_config.max_expansion_radius);
 
         last_frontiers_found_ += frontiers.size();
-
-        if (config_.debug_output) {
-            std::cout << "  Found " << frontiers.size() << " frontiers within radius " 
-                      << vp_config.max_expansion_radius << "m" << std::endl;
-        }
-
         if (frontiers.empty()) {
-            if (config_.debug_output) {
-                std::cout << "  No frontiers found - chain terminated" << std::endl;
-            }
             break;
         }
 
         // Cluster frontiers
-        std::vector<FrontierCluster> clusters = frontier_finder_.cluster_frontiers(
-            frontiers,
-            vp_config.frontier_cluster_radius,
-            vp_config.min_cluster_size);
-
+        std::vector<FrontierCluster> clusters = frontier_finder_.cluster_frontiers(frontiers, vp_config.frontier_cluster_radius, vp_config.min_cluster_size);
         last_clusters_formed_ += clusters.size();
-
-        if (config_.debug_output) {
-            std::cout << "  Formed " << clusters.size() << " clusters" << std::endl;
-        }
 
         if (clusters.empty()) {
             if (config_.debug_output) {
@@ -175,14 +94,7 @@ std::vector<Viewpoint> ViewpointGenerator::build_chain(const VoxelKeySet& initia
         // Generate viewpoint candidates for clusters
         std::vector<Viewpoint> candidates = generate_candidates_for_clusters(clusters, cumulative_coverage);
 
-        if (config_.debug_output) {
-            std::cout << "  Generated " << candidates.size() << " candidates" << std::endl;
-        }
-
         if (candidates.empty()) {
-            if (config_.debug_output) {
-                std::cout << "  No valid candidates - chain terminated" << std::endl;
-            }
             break;
         }
 
@@ -201,14 +113,6 @@ std::vector<Viewpoint> ViewpointGenerator::build_chain(const VoxelKeySet& initia
         selected->compute_coverage_score(cumulative_coverage);
         selected->set_status(ViewpointStatus::PLANNED);
 
-        if (config_.debug_output) {
-            std::cout << "  Selected VP " << selected->id() 
-                      << " at (" << selected->position().transpose() << ")" << std::endl;
-            std::cout << "    visible=" << selected->num_visible()
-                      << ", new=" << selected->num_new_coverage()
-                      << ", score=" << selected->total_score() << std::endl;
-        }
-
         // Store coverage before adding newly observed
         VoxelKeySet coverage_before_this = cumulative_coverage;
         
@@ -224,11 +128,6 @@ std::vector<Viewpoint> ViewpointGenerator::build_chain(const VoxelKeySet& initia
 
         // Add to chain
         chain.push_back(std::move(*selected));
-
-        if (config_.debug_output) {
-            std::cout << "  New expansion center: (" << expansion_center.transpose() << ")" << std::endl;
-            std::cout << "  Cumulative coverage now: " << cumulative_coverage.size() << " voxels" << std::endl;
-        }
     }
 
     return chain;
@@ -459,10 +358,10 @@ void ViewpointGenerator::score_viewpoint(Viewpoint& vp, const VoxelKeySet& alrea
         vp_config.distance_weight * dist_score;
 
     // Overlap penalty
-    float overlap = vp.overlap_score();
-    if (overlap < vp_config.min_overlap_ratio) {
+    float overlap = 1 - vp.coverage_score();
+    if (overlap < vp_config.target_overlap_ratio * 0.5) {
         vp.state().total_score *= 0.5f;
-    } else if (overlap > vp_config.max_overlap_ratio) {
+    } else if (overlap > vp_config.target_overlap_ratio * 2.0f) {
         vp.state().total_score *= 0.7f;
     }
 }

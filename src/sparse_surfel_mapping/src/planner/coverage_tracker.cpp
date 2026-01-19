@@ -71,10 +71,6 @@ void CoverageTracker::update_statistics(size_t total_surfels) {
     else {
         stats_.coverage_ratio = 0.0f;
     }
-
-    if (stats_.viewpoints_visited > 0) {
-        stats_.average_coverage_per_viewpoint = static_cast<float>(stats_.covered_surfels) / stats_.viewpoints_visited;
-    }
 }
 
 void CoverageTracker::reset() {

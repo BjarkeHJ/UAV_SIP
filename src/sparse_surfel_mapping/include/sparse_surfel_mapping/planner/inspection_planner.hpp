@@ -18,8 +18,6 @@ public:
         IDLE,
         PLANNING,
         EXECUTING,
-        EXTENDING,
-        REPLANNING,
         COMPLETE,
         FAILED,
         EMERGENCY_STOP,
@@ -30,68 +28,71 @@ public:
 
     // initialize planner with map
     void initialize(SurfelMap* map);
-
-    void update_state(const Eigen::Vector3f& position, float yaw); // update drone state
+    void update_pose(const Eigen::Vector3f& position, float yaw); // update drone state
     
     bool plan();
-    bool extend_plan();
-    bool needs_extension() const;
+    bool validate_viewpoints();
 
-    PathEvaluationResult evaluate_path();
-    PlannerState evaluate_and_react();
-    void clear_emergency(); // allow replan again
+    void mark_target_reached(); // mark front viewpoint visited
+    bool is_complete();
 
-    void mark_target_reached();
-    const Viewpoint& get_next_target() const;
-    const InspectionPath& get_current_path() const { return current_path_; }
-    const std::deque<Viewpoint>& get_planned_viewpoints() const { return planned_viewpoints_; }
-    bool is_inspection_complete() const;
+    const Viewpoint* next_target() const;
+    const std::deque<Viewpoint>& viewpoints() const { return viewpoints_; }
+    size_t remaining_count() const { return viewpoints_.size(); }
+    bool has_plan() const { return !viewpoints_.empty(); }
 
+    PlannerState get_planner_state() const { return planner_state_; }
     const PlanningStatistics& statistics() const { return stats_; }
-    PlannerState state() const { return planner_state_; }
-    
-    size_t remaining_viewpoints() const { return planned_viewpoints_.size(); }
-    bool has_active_plan() const { return !planned_viewpoints_.empty(); }
+    const CoverageTracker& coverage() const { return coverage_tracker_; }
+    // // Update statuses after removal
+    // update_viewpoint_statuses();
 
-    size_t committed_count() const;
-    size_t uncommitted_count() const;
-    size_t commit_index() const;
-
-    void request_replan() { needs_full_replan_ = true; }
+    void clear_emergency(); // allow replan again
+    void request_replan() { needs_replan_ = true; }
     void reset();
 
-    const CoverageTracker& coverage_tracker() const { return coverage_tracker_; }
-    const ViewpointGenerator& viewpoint_generator() const { return viewpoint_generator_; }
+
+    // bool extend_plan();
+    // bool needs_extension() const;
+
+    // PathEvaluationResult evaluate_path();
+    // PlannerState evaluate_and_react();
+    
+    // const Viewpoint& get_next_target() const;
+    // const InspectionPath& get_current_path() const { return current_path_; }
+    // const std::deque<Viewpoint>& get_planned_viewpoints() const { return planned_viewpoints_; }
+    // bool is_inspection_complete() const;
+    
+    // PlannerState state() const { return planner_state_; }
+    
+    // size_t remaining_viewpoints() const { return planned_viewpoints_.size(); }
+    // bool has_active_plan() const { return !planned_viewpoints_.empty(); }
+    
+    
     
 private:
-    void initialize_components();
-    void update_statistics();
-    void update_path();
-    void update_viewpoint_statuses();
+    void order_viewpoints();
+    float compute_travel_cost(const ViewpointState& target) const;
+    void two_opt_optimize();
+    bool try_repair_viewpoint(Viewpoint& vp);
 
+    void update_statistics();
+    
     InspectionPlannerConfig config_;
     CoverageTracker coverage_tracker_;
     ViewpointGenerator viewpoint_generator_;
-    
     SurfelMap* map_{nullptr};
 
     // Current state
     Eigen::Vector3f current_position_{Eigen::Vector3f::Zero()};
     float current_yaw_{0.0f};
-    PlannerState planner_state_{PlannerState::IDLE};
-
+        
     // Planning state
-    std::deque<Viewpoint> planned_viewpoints_;
-    InspectionPath current_path_;
-    bool needs_full_replan_{true};
-
-    Viewpoint invalid_viewpoint_; // return when no plan
-    std::optional<Viewpoint> seed_viewpoint_; // for initializing viewpoint generation
+    PlannerState planner_state_{PlannerState::IDLE};
+    std::deque<Viewpoint> viewpoints_;
+    bool needs_replan_{true};
 
     // detect map changes
-    size_t map_surfels_at_last_plan_{0};
-    double last_plan_time_ms_{0.0};
-    size_t total_viewpoints_visited_{0};
     mutable PlanningStatistics stats_;
 };
 

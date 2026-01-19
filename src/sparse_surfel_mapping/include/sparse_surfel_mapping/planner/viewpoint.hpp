@@ -66,8 +66,6 @@ public:
     size_t num_new_coverage() const { return state_.new_coverage_voxels.size(); }
 
     float coverage_score() const { return state_.coverage_score; }
-    float overlap_score() const { return state_.overlap_score; }
-    float distance_score() const { return state_.distance_score; }
     float total_score() const { return state_.total_score; }
 
     // frustum acces

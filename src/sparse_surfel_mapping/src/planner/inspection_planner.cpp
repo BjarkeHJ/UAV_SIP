@@ -22,496 +22,294 @@ InspectionPlanner::InspectionPlanner(const InspectionPlannerConfig& config)
 
 void InspectionPlanner::initialize(SurfelMap* map) {
     map_ = map;
-    initialize_components();
-    planner_state_ = PlannerState::IDLE;
-
-    if (config_.debug_output) {
-        std::cout << "[InspectionPlanner] Initialized with map" << std::endl;
-        std::cout << "  Commit horizon: " << config_.commit_horizon << " viewpoints" << std::endl;
-        std::cout << "  Min horizon buffer: " << config_.min_horizon_buffer << " viewpoints" << std::endl;
-    }
-}
-
-void InspectionPlanner::initialize_components() {
     viewpoint_generator_.set_map(map_);
     viewpoint_generator_.set_coverage_tracker(&coverage_tracker_);
+    planner_state_ = PlannerState::IDLE;
 }
 
-void InspectionPlanner::update_state(const Eigen::Vector3f& position, float yaw) {
+void InspectionPlanner::update_pose(const Eigen::Vector3f& position, float yaw) {
     current_position_ = position;
     current_yaw_ = yaw;
-
-    // update coverage statistics
-    if (map_) {
-        coverage_tracker_.update_statistics(map_->num_valid_surfels());
-    }
 }
 
-size_t InspectionPlanner::commit_index() const {
-    return std::min(config_.commit_horizon, planned_viewpoints_.size()); // viewpoints with index >= commit_index can be replanned
-}
-
-size_t InspectionPlanner::committed_count() const {
-    return commit_index();
-}
-
-size_t InspectionPlanner::uncommitted_count() const {
-    size_t ci = committed_count();
-    return (planned_viewpoints_.size() > ci) ? (planned_viewpoints_.size() - ci) : 0; 
-}
-
-bool InspectionPlanner::needs_extension() const {
-    return uncommitted_count() < config_.min_horizon_buffer;
-}
-
-void InspectionPlanner::update_viewpoint_statuses() {
-    size_t ci = commit_index();
-    for (size_t i = 0; i < planned_viewpoints_.size(); ++i) {
-        if (i < ci) {
-            planned_viewpoints_[i].set_status(ViewpointStatus::COMMITED);
-        }
-        else {
-            planned_viewpoints_[i].set_status(ViewpointStatus::PLANNED);
-        }
-    }
-}
-
-PathEvaluationResult InspectionPlanner::evaluate_path() {
-    PathEvaluationResult result;
-    stats_.path_evaluations++;
-
-    if (!map_) {
-        result.status = PathSafetyStatus::NO_MAP;
-        return result;
-    }
-
-    if (planned_viewpoints_.size() < 2) {
-        result.status = PathSafetyStatus::INVALID_PATH;
-        return result;
-    }
+bool InspectionPlanner::validate_viewpoints() {
+    if (!map_) return false;
 
     const float collision_radius = config_.collision.inflation_radius();
-    
-    for (auto& vp : planned_viewpoints_) {
-        if (vp.is_in_collision(*map_, collision_radius)) {
-            // Move backward
-            std::cout << "OH SHIT COLLISION!" << std::endl;
+    const float voxel_size = map_->voxel_size();
 
-            ViewpointState& state = vp.state();
-            state.position = state.position - state.forward_direction() * collision_radius;
-            if (vp.is_in_collision(*map_, collision_radius)) {
-                vp.set_status(ViewpointStatus::UNREACHABLE);
-                std::cout << "OH SHIT COLLISION - AFTER MOVE!" << std::endl;
+    // Check all viewpoints in plan for collision risk
+    auto it = viewpoints_.begin();
+    while (it != viewpoints_.end()) {
+        if (!it->is_in_collision(*map_, collision_radius)) {
+            ++it;
+            continue; // not in collision risk
+        }
+
+        // In collision -> Try to repair by moving agains view direction (Intuitively away from structure)
+        for (float d = voxel_size; d <= collision_radius; d+= voxel_size) {
+            Eigen::Vector3f new_pos = it->position() - it->state().forward_direction() * d;
+            Viewpoint test_vp(new_pos, it->yaw(), config_.camera);
+
+            if (!test_vp.is_in_collision(*map_, collision_radius)) {
+                it->set_position(new_pos);
+                // return true;
                 continue;
             }
-            vp.set_status(ViewpointStatus::ACTIVE);
         }
     }
 
-
-    result.status = PathSafetyStatus::SAFE;
-    return result;
+    return false;
 }
 
-InspectionPlanner::PlannerState InspectionPlanner::evaluate_and_react() {
-    PathEvaluationResult eval = evaluate_path(); 
-
-    switch (eval.status) {
-        case PathSafetyStatus::SAFE:
-            planner_state_ = PlannerState::EXECUTING;
-            if (needs_extension()) {
-                extend_plan();
-            }
-            break;
-        
-        case PathSafetyStatus::COLLISION_COMMITED:
-            planner_state_ = PlannerState::EMERGENCY_STOP;
-            if (config_.debug_output) {
-                std::cout << "[InspectionPlanner] !!! EMERGENCY STOP !!!" << std::endl;
-                std::cout << "  Collision detected in COMMITTED path segment " 
-                          << eval.collision_segment << std::endl;
-                std::cout << "  Collision point: (" << eval.collision_point.transpose() << ")" << std::endl;
-                std::cout << "  Distance to collision: " << eval.collision_distance << "m" << std::endl;
-            }
-            break;
-        
-        case PathSafetyStatus::COLLISION_UNCOMMITED:
-            if (config_.debug_output) {
-                std::cout << "[InspectionPlanner] Collision in uncommitted segment " 
-                          << eval.collision_segment << " - regenerating" << std::endl;
-            }
-            extend_plan();
-            break;
-        
-        case PathSafetyStatus::INVALID_PATH:
-        case PathSafetyStatus::NO_MAP:
-            needs_full_replan_ = true;
-            break;
-    }
-
-    return planner_state_;
-}
-
-void InspectionPlanner::clear_emergency() {
-    if (planner_state_ == PlannerState::EMERGENCY_STOP) {
-        planner_state_ = PlannerState::IDLE;
-        needs_full_replan_ = true;
-        planned_viewpoints_.clear();
-        current_path_.clear();
-
-        if (config_.debug_output) {
-            std::cout << "[InspectionPlanner] Emergency cleared - will replan" << std::endl;
-        }
-    }
-}
 
 bool InspectionPlanner::plan() {
+    if (!map_ || planner_state_ == PlannerState::EMERGENCY_STOP) return false;
+    
     auto t_start = std::chrono::high_resolution_clock::now();
-
-    needs_full_replan_ = false;
     planner_state_ = PlannerState::PLANNING;
-
-    if (!map_) {
-        planner_state_ = PlannerState::FAILED;
-        return false;
-    }
-
     coverage_tracker_.update_statistics(map_->num_valid_surfels());
-    map_surfels_at_last_plan_ = map_->num_valid_surfels();
 
-    if (is_inspection_complete()) {
-        planner_state_ = PlannerState::COMPLETE;
-        if (config_.debug_output) {
-            std::cout << "[InspectionPlanner] Inspection Complete! Coverage: " 
-                      << std::fixed << std::setprecision(1) 
-                      << coverage_tracker_.coverage_ratio() * 100.0f << "%" << std::endl;
-        }
-        return true;
-    }
-
-    // Generate viewpoint chain
-    std::vector<Viewpoint> chain;
-
-    if (seed_viewpoint_.has_value()) {
-        if (config_.debug_output) {
-            std::cout << "[InspectionPlanner] Generating continuation from VP " 
-                      << seed_viewpoint_->id() << std::endl;
-        }
-        chain = viewpoint_generator_.generate_continuation(*seed_viewpoint_);
-    } 
-    else {
-        if (config_.debug_output) {
-            std::cout << "[InspectionPlanner] Generating initial chain from ("
-                      << current_position_.transpose() << ")" << std::endl;
-        }
-        chain = viewpoint_generator_.generate_next_viewpoints(current_position_, current_yaw_);
-    }
-
-    if (config_.debug_output) {
-        std::cout << "[InspectionPlanner] ViewpointGenerator returned " 
-                  << chain.size() << " viewpoints" << std::endl;
-    }
-
-    if (chain.empty()) {
-        if (config_.debug_output) {
-            std::cout << "[InspectionPlanner] No viewpoints generated" << std::endl;
-        }
-        planner_state_ = PlannerState::IDLE;
-        return false;
-    }
-
-    // Validate paths and build final chain
-    planned_viewpoints_.clear();
-    for (auto& vp : chain) {
-        if (!vp.is_in_collision(*map_, config_.viewpoint.min_view_distance)) {
-            planned_viewpoints_.push_back(std::move(vp));
-        } else {
-            if (config_.debug_output) {
-                std::cout << "[InspectionPlanner] VP " << vp.id() << " unreachable!" << std::endl;
+    // Compute the current planned viewpoint visibility (only what viewpoint in plan sees)
+    VoxelKeySet already_observed;
+    size_t desired_new = config_.max_viewpoints_in_plan;
+    if (!viewpoints_.empty()) {
+        for (auto& vp : viewpoints_) {
+            vp.compute_visibility(*map_, true); // Recompute visibility - map could have updated
+            for (const auto& key : vp.visible_voxels()) {
+                already_observed.insert(key);
             }
-            stats_.viewpoints_rejected++;
         }
+
+        desired_new -= viewpoints_.size(); // desired new viewpoints
     }
 
-    if (planned_viewpoints_.empty()) {
+    if (desired_new <= 0) return false;
+
+    std::vector<Viewpoint> new_vpts;
+    // If the planner needs full replan: Scrap old and replan from current drone pose
+    if (needs_replan_) {
+        viewpoints_.clear();
+        Viewpoint drone_vp(current_position_, current_yaw_, config_.camera);
+        drone_vp.compute_visibility(*map_, true);
+        new_vpts = viewpoint_generator_.generate_viewpoints(drone_vp, desired_new, already_observed);
+    }
+
+    // Space in current plan? Bound the number of viewpoints to optimize
+    else if (viewpoints_.size() < config_.max_viewpoints_in_plan) {
+        Viewpoint& seed_vp = viewpoints_.back(); // generate from last in queue 
+        new_vpts = viewpoint_generator_.generate_viewpoints(seed_vp, desired_new, already_observed);
+    }
+
+    // Planner failed
+    if (new_vpts.empty()) {
         if (config_.debug_output) {
-            std::cout << "[InspectionPlanner] No reachable viewpoints" << std::endl;
-        }
-        planner_state_ = PlannerState::FAILED;
-        return false;
-    }
-
-    update_viewpoint_statuses();
-    update_path();
-
-    stats_.viewpoints_planned = planned_viewpoints_.size();
-
-    auto t_end = std::chrono::high_resolution_clock::now();
-    last_plan_time_ms_ = std::chrono::duration<double, std::milli>(t_end - t_start).count();
-    stats_.total_planning_time_ms += last_plan_time_ms_;
-
-    planner_state_ = PlannerState::EXECUTING;
-
-    if (config_.debug_output) {
-        std::cout << "[InspectionPlanner] Plan: " << planned_viewpoints_.size()
-                  << " viewpoints in " << std::fixed << std::setprecision(2)
-                  << last_plan_time_ms_ << " ms" << std::endl;
-        
-        std::cout << "Chain:" << std::endl;
-        for (size_t i = 0; i < planned_viewpoints_.size(); ++i) {
-            const auto& vp = planned_viewpoints_[i];
-            float dist = (i == 0) 
-                ? (vp.position() - current_position_).norm()
-                : (vp.position() - planned_viewpoints_[i-1].position()).norm();
-            
-            std::cout << "  [" << i << "] VP " << vp.id() 
-                      << " @ (" << vp.position().transpose() << ")"
-                      << " dist=" << std::setprecision(2) << dist << "m"
-                      << " visible=" << vp.num_visible() << std::endl;
+            std::cout << "[InspectionPlanner] FAILED: Could not generate any new viewpoints..." << std::endl;
+            return false;
         }
     }
+
+    // Order current viewpoints    
+    for (auto& vp : new_vpts) {
+        std::cout << vp.position().transpose() << std::endl;
+        viewpoints_.push_back(std::move(vp));
+    }
+
+
 
     return true;
+
+    // // Generate viewpoint chain
+    // std::vector<Viewpoint> chain;
+
+    // if (seed_viewpoint_.has_value()) {
+    //     if (config_.debug_output) {
+    //         std::cout << "[InspectionPlanner] Generating continuation from VP " 
+    //                   << seed_viewpoint_->id() << std::endl;
+    //     }
+    //     chain = viewpoint_generator_.generate_continuation(*seed_viewpoint_);
+    // } 
+    // else {
+    //     if (config_.debug_output) {
+    //         std::cout << "[InspectionPlanner] Generating initial chain from ("
+    //                   << current_position_.transpose() << ")" << std::endl;
+    //     }
+    //     chain = viewpoint_generator_.generate_next_viewpoints(current_position_, current_yaw_);
+    // }
+
+    // if (config_.debug_output) {
+    //     std::cout << "[InspectionPlanner] ViewpointGenerator returned " 
+    //               << chain.size() << " viewpoints" << std::endl;
+    // }
+
+    // if (chain.empty()) {
+    //     if (config_.debug_output) {
+    //         std::cout << "[InspectionPlanner] No viewpoints generated" << std::endl;
+    //     }
+    //     planner_state_ = PlannerState::IDLE;
+    //     return false;
+    // }
+
+    // // Validate paths and build final chain
+    // planned_viewpoints_.clear();
+    // for (auto& vp : chain) {
+    //     if (!vp.is_in_collision(*map_, config_.viewpoint.min_view_distance)) {
+    //         planned_viewpoints_.push_back(std::move(vp));
+    //     } else {
+    //         if (config_.debug_output) {
+    //             std::cout << "[InspectionPlanner] VP " << vp.id() << " unreachable!" << std::endl;
+    //         }
+    //         stats_.viewpoints_rejected++;
+    //     }
+    // }
+
+    // if (planned_viewpoints_.empty()) {
+    //     if (config_.debug_output) {
+    //         std::cout << "[InspectionPlanner] No reachable viewpoints" << std::endl;
+    //     }
+    //     planner_state_ = PlannerState::FAILED;
+    //     return false;
+    // }
+
+    // update_viewpoint_statuses();
+    // update_path();
+
+    // stats_.viewpoints_planned = planned_viewpoints_.size();
+
+    // auto t_end = std::chrono::high_resolution_clock::now();
+    // last_plan_time_ms_ = std::chrono::duration<double, std::milli>(t_end - t_start).count();
+    // stats_.total_planning_time_ms += last_plan_time_ms_;
+
+    // planner_state_ = PlannerState::EXECUTING;
+
+    // if (config_.debug_output) {
+    //     std::cout << "[InspectionPlanner] Plan: " << planned_viewpoints_.size()
+    //               << " viewpoints in " << std::fixed << std::setprecision(2)
+    //               << last_plan_time_ms_ << " ms" << std::endl;
+        
+    //     std::cout << "Chain:" << std::endl;
+    //     for (size_t i = 0; i < planned_viewpoints_.size(); ++i) {
+    //         const auto& vp = planned_viewpoints_[i];
+    //         float dist = (i == 0) 
+    //             ? (vp.position() - current_position_).norm()
+    //             : (vp.position() - planned_viewpoints_[i-1].position()).norm();
+            
+    //         std::cout << "  [" << i << "] VP " << vp.id() 
+    //                   << " @ (" << vp.position().transpose() << ")"
+    //                   << " dist=" << std::setprecision(2) << dist << "m"
+    //                   << " visible=" << vp.num_visible() << std::endl;
+    //     }
+    // }
+
+    // return true;
 }
 
-bool InspectionPlanner::extend_plan() {
-    if (planner_state_ == PlannerState::EMERGENCY_STOP) return false;
+void InspectionPlanner::order_viewpoints() {
+    if (viewpoints_.size() < 2) return;
 
-    auto t_start = std::chrono::high_resolution_clock::now();
-    planner_state_ = PlannerState::EXTENDING;
-    stats_.path_extensions++;
+    // Order by travel cost: Yaw-diff + distance
+    std::vector<Viewpoint> pool(viewpoints_.begin(), viewpoints_.end());
+    std::sort(pool.begin(), pool.end(),
+        [this](const Viewpoint& a, const Viewpoint& b) {
+            float cost_a = compute_travel_cost(a.state());
+            float cost_b = compute_travel_cost(b.state());
+            return cost_a < cost_b;
+        });
+    
+    viewpoints_.assign(pool.begin(), pool.end()); 
+    two_opt_optimize();
+}
 
-    if (!map_) {
-        planner_state_ = PlannerState::FAILED;
-        return false;
-    }
+void InspectionPlanner::two_opt_optimize() {
+    return; // TODO
+}
 
-    if (!needs_extension() && uncommitted_count() > 0) {
-        planner_state_ = PlannerState::EXECUTING;
-        return true; // no extension needed
-    }
+float InspectionPlanner::compute_travel_cost(const ViewpointState& target) const {
+    float dist = (target.position - current_position_).norm();
+    float yaw_diff = std::abs(target.yaw - current_yaw_);
+    if (yaw_diff > M_PI) yaw_diff = 2.0f * M_PI - yaw_diff; // wrap
 
-    if (config_.debug_output) {
-        std::cout << "[InspectionPlanner] Extending plan (committed=" << committed_count()
-                  << ", uncommitted=" << uncommitted_count() << ")" << std::endl;
-    }
-
-    // Determine the seed position for extension
-    // We extend from the LAST COMMITTED viewpoint (or current position if none)
-    Eigen::Vector3f extension_seed_pos;
-    float extension_seed_yaw;
-    const Viewpoint* seed_vp = nullptr;
-    
-    size_t ci = commit_index();
-    if (ci > 0 && !planned_viewpoints_.empty()) {
-        // Extend from the last committed viewpoint
-        seed_vp = &planned_viewpoints_[ci - 1];
-        extension_seed_pos = seed_vp->position();
-        extension_seed_yaw = seed_vp->yaw();
-        
-        if (config_.debug_output) {
-            std::cout << "  Extension seed: VP " << seed_vp->id() 
-                      << " (last committed)" << std::endl;
-        }
-    } else if (!planned_viewpoints_.empty()) {
-        // No committed viewpoints yet, extend from first planned
-        seed_vp = &planned_viewpoints_.front();
-        extension_seed_pos = seed_vp->position();
-        extension_seed_yaw = seed_vp->yaw();
-    } else {
-        // No viewpoints at all, need full replan
-        needs_full_replan_ = true;
-        planner_state_ = PlannerState::IDLE;
-        return false;
-    }
-    
-    // Remove uncommitted viewpoints (they will be regenerated)
-    while (planned_viewpoints_.size() > ci) {
-        planned_viewpoints_.pop_back();
-    }
-    
-    // Generate new viewpoints from the extension seed
-    std::vector<Viewpoint> extension;
-    if (seed_vp) {
-        extension = viewpoint_generator_.generate_continuation(*seed_vp);
-    } else {
-        extension = viewpoint_generator_.generate_next_viewpoints(extension_seed_pos, extension_seed_yaw);
-    }
-    
-    if (extension.empty()) {
-        if (config_.debug_output) {
-            std::cout << "  No extension viewpoints generated" << std::endl;
-        }
-        update_viewpoint_statuses();
-        update_path();
-        planner_state_ = PlannerState::EXECUTING;
-        return planned_viewpoints_.size() > 0;
-    }
-    
-    // Add extension viewpoints (validate collision-free)
-    Eigen::Vector3f path_start = planned_viewpoints_.empty() 
-        ? current_position_ 
-        : planned_viewpoints_.back().position();
-    
-    size_t added = 0;
-    for (auto& vp : extension) {
-        if (planned_viewpoints_.size() >= config_.max_viewpoints_per_plan) {
-            break;
-        }
-        
-        // REMOVE
-        bool path_valid = true;
-
-        if (path_valid) {
-            planned_viewpoints_.push_back(std::move(vp));
-            path_start = planned_viewpoints_.back().position();
-            added++;
-        } else {
-            if (config_.debug_output) {
-                std::cout << "  Extension VP " << vp.id() << " blocked - stopping" << std::endl;
-            }
-            break;
-        }
-    }
-    
-    update_viewpoint_statuses();
-    update_path();
-    
-    auto t_end = std::chrono::high_resolution_clock::now();
-    double extension_time = std::chrono::duration<double, std::milli>(t_end - t_start).count();
-    
-    if (config_.debug_output) {
-        std::cout << "  Extended by " << added << " viewpoints in " 
-                  << std::fixed << std::setprecision(2) << extension_time << " ms" << std::endl;
-        std::cout << "  Total: " << planned_viewpoints_.size() << " (" 
-                  << committed_count() << " committed, " 
-                  << uncommitted_count() << " uncommitted)" << std::endl;
-    }
-    
-    planner_state_ = PlannerState::EXECUTING;
-    return true;
+    return dist + yaw_diff; // maybe scale yaw diff down (*0.5f)
 }
 
 void InspectionPlanner::mark_target_reached() {
-    if (planned_viewpoints_.empty()) return;
+    if (viewpoints_.empty()) return;
 
-    Viewpoint& reached = planned_viewpoints_.front();
+    Viewpoint& reached = viewpoints_.front();
     reached.set_status(ViewpointStatus::VISITED);
-
-    if (map_) {
-        reached.compute_visibility(*map_, true);
-    }
-
     coverage_tracker_.record_visited_viewpoint(reached);
-    stats_.total_path_length += current_path_.total_length;
-
-    total_viewpoints_visited_++;
-
-    if (config_.debug_output) {
-        std::cout << "[InspectionPlanner] === VP " << reached.id() << " REACHED ===" << std::endl;
-        std::cout << "  Position: (" << reached.position().transpose() << ")" << std::endl;
-        std::cout << "  Observed: " << reached.num_visible() << " surfels" << std::endl;
-        std::cout << "  Total visited: " << total_viewpoints_visited_ << std::endl;
-        std::cout << "  Coverage: " << std::fixed << std::setprecision(1) 
-                  << coverage_tracker_.coverage_ratio() * 100.0f << "%" << std::endl;
-    }
-
-    // Store for potential continuation
-    seed_viewpoint_ = reached;
-
-    // Remove the reached viewpoint
-    planned_viewpoints_.pop_front();
+    stats_.viewpoints_visited++;
     
-    // Update statuses after removal
-    update_viewpoint_statuses();
+    // Remove the reached viewpoint
+    viewpoints_.pop_front();
 
-    if (!planned_viewpoints_.empty()) {
-        update_path();
-        
-        if (config_.debug_output) {
-            std::cout << "  Next target: VP " << planned_viewpoints_.front().id() 
-                      << " (COMMITTED)" << std::endl;
-            std::cout << "  Remaining: " << planned_viewpoints_.size() 
-                      << " (" << committed_count() << " committed)" << std::endl;
-        }
-        
-        // Check if we need to extend
-        if (needs_extension()) {
-            if (config_.debug_output) {
-                std::cout << "  Horizon buffer low - triggering extension" << std::endl;
-            }
-        }
-    } else {
-        current_path_.clear();
-        needs_full_replan_ = true;
-        
-        if (config_.debug_output) {
-            std::cout << "  Chain exhausted - need full replan" << std::endl;
-        }
+    if (viewpoints_.empty()) {
+        needs_replan_ = true;
     }
+
+    if (is_complete()) {
+        planner_state_ = PlannerState::COMPLETE;
+    }
+
+    // // Update statuses after removal
+    // update_viewpoint_statuses();
 
     update_statistics();
 }
 
-void InspectionPlanner::update_path() {
-    if (planned_viewpoints_.empty()) {
-        current_path_.clear();
-        return;
-    }
-
-    current_path_.clear();
-    ViewpointState current_pose_state;
-    current_pose_state.position = current_position_;
-    current_pose_state.yaw = current_yaw_;
-    current_path_.viewpoints.push_back(current_pose_state);
-
-    for (const auto& vp : planned_viewpoints_) {
-        current_path_.viewpoints.push_back(vp.state());
-    }
-
-    current_path_.compute_length();
-    current_path_.is_valid = true;
+const Viewpoint* InspectionPlanner::next_target() const {
+    return viewpoints_.empty() ? nullptr : &viewpoints_.front();
 }
 
-const Viewpoint& InspectionPlanner::get_next_target() const {
-    if (planned_viewpoints_.empty()) return invalid_viewpoint_;
-    return planned_viewpoints_.front();
-}
-
-bool InspectionPlanner::is_inspection_complete() const {
+bool InspectionPlanner::is_complete() {
+    if (!map_) return false;
+    coverage_tracker_.update_statistics(map_->num_valid_surfels());
     if (coverage_tracker_.coverage_ratio() >= config_.target_coverage_ratio) return true;
-    if (total_viewpoints_visited_ >= config_.max_total_viewpoints) return true;
     return false;
 }
 
+// void InspectionPlanner::update_path() {
+//     if (planned_viewpoints_.empty()) {
+//         current_path_.clear();
+//         return;
+//     }
+
+//     current_path_.clear();
+//     ViewpointState current_pose_state;
+//     current_pose_state.position = current_position_;
+//     current_pose_state.yaw = current_yaw_;
+//     current_path_.viewpoints.push_back(current_pose_state);
+
+//     for (const auto& vp : planned_viewpoints_) {
+//         current_path_.viewpoints.push_back(vp.state());
+//     }
+
+//     current_path_.compute_length();
+//     current_path_.is_valid = true;
+// }
+
+// const Viewpoint& InspectionPlanner::get_next_target() const {
+//     if (planned_viewpoints_.empty()) return invalid_viewpoint_;
+//     return planned_viewpoints_.front();
+// }
+
+
+
 void InspectionPlanner::update_statistics() {
     if (!map_) return;
-
+    coverage_tracker_.update_statistics(map_->num_valid_surfels());
     stats_.total_surfles = map_->num_valid_surfels();
     stats_.covered_surfels = coverage_tracker_.num_observed();
     stats_.coverage_ratio = coverage_tracker_.coverage_ratio();
-    stats_.viewpoints_visited = total_viewpoints_visited_;
-    
-    if (total_viewpoints_visited_ > 0) {
-        stats_.average_coverage_per_viewpoint = 
-            static_cast<float>(stats_.covered_surfels) / total_viewpoints_visited_;
-    }
+    stats_.viewpoints_planned = viewpoints_.size();
 }
 
 void InspectionPlanner::reset() {
+    viewpoints_.clear();
     coverage_tracker_.reset();
-    planned_viewpoints_.clear();
-    current_path_.clear();
-    
-    seed_viewpoint_.reset();
-    needs_full_replan_ = true;
-    
-    map_surfels_at_last_plan_ = 0;
-    total_viewpoints_visited_ = 0;
-    last_plan_time_ms_ = 0.0;
-    
     stats_ = PlanningStatistics();
     planner_state_ = PlannerState::IDLE;
+    needs_replan_ = true;
     
     if (config_.debug_output) {
         std::cout << "[InspectionPlanner] Reset complete" << std::endl;

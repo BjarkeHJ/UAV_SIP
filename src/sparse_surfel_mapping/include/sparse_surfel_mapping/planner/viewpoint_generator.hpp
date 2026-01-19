@@ -18,6 +18,9 @@ public:
     void set_map(const SurfelMap* map);
     void set_coverage_tracker(const CoverageTracker* ct) { coverage_tracker_ = ct; }
 
+    // Generates n_new (if possible) viewpoints (continuation) from starting viewpoint with a prior observation assumption (optional)
+    std::vector<Viewpoint> generate_viewpoints(const Viewpoint& start_viewpoint, size_t n_new, const VoxelKeySet& current_obs={});
+
     std::vector<Viewpoint> generate_next_viewpoints(const Eigen::Vector3f& position, float yaw);
     std::vector<Viewpoint> generate_continuation(const Viewpoint& start_viewpoint);
 
@@ -28,7 +31,7 @@ public:
     double last_generation_time_ms() const { return last_generation_time_ms_; }
 
 private:
-    std::vector<Viewpoint> build_chain(const VoxelKeySet& initial_coverage, const VoxelKeySet& seed_visible, const Eigen::Vector3f& seed_position);
+    std::vector<Viewpoint> build_chain(const VoxelKeySet& initial_coverage, const VoxelKeySet& seed_visible, const Eigen::Vector3f& seed_position, size_t n_new);
     Eigen::Vector3f compute_expansion_center(const VoxelKeySet& visible_voxels, const VoxelKeySet& already_covered) const;
     std::vector<Viewpoint> generate_candidates_for_clusters(const std::vector<FrontierCluster>& clusters, const VoxelKeySet& already_covered);
     Viewpoint generate_viewpoint_for_cluster(const FrontierCluster& cluster, const VoxelKeySet& already_covered);
