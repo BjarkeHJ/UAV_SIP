@@ -85,7 +85,7 @@ bool InspectionPlanner::validate_path() {
     if (invalid_index < 0) return true; // path is valid
 
     if (config_.debug_output) {
-        std::cout << "[InspectionPlanner] Path collsion - Local Replanning..." << std::endl;
+        std::cout << "[InspectionPlanner] Path collision - Local Replanning..." << std::endl;
     }
 
     int next_vp_path_idx = -1;
@@ -102,16 +102,29 @@ bool InspectionPlanner::validate_path() {
     if (next_vp_path_idx < 0 || next_vp_idx < 0) {
         // no viewpoint after collision - full replan
         path_cache_valid_ = false;
+        needs_replan_ = true;
         return false;
     }
 
     const Eigen::Vector3f replan_start = cached_path_.positions[invalid_index];
     const Eigen::Vector3f replan_goal = cached_path_.positions[next_vp_path_idx];
-
+    
     auto new_segment = rrt_planner_.plan(replan_start, replan_goal);
     if (new_segment.empty()) {
-        // local replan failed - full replan
+        // local replan failed
+
+        // erase unreachable viewpoint
+        if (next_vp_idx >= 0 && static_cast<size_t>(next_vp_idx) < viewpoints_.size()) {
+            viewpoints_.erase(viewpoints_.begin() + next_vp_idx);
+        }
+
         path_cache_valid_ = false;
+    
+        // if no more viewpoints - full replan
+        if (viewpoints_.empty()) {
+            needs_replan_ = true;
+        }
+
         return false;
     }
 
@@ -153,6 +166,8 @@ bool InspectionPlanner::plan() {
     planner_state_ = PlannerState::PLANNING;
     coverage_tracker_.update_statistics(map_->num_valid_surfels());
 
+    if (viewpoints_.size() >= config_.max_viewpoints_in_plan) return false; // plan saturated
+
     // Compute the current planned viewpoint (except front) visibility (only what viewpoint in plan sees)
     // Because front is used for seeding and expansion center computation
     VoxelKeySet plan_observed;
@@ -166,8 +181,6 @@ bool InspectionPlanner::plan() {
             }
         }
     }
-
-    if (desired_new <= 0) return false;
 
     std::vector<Viewpoint> new_vpts;
     // If the planner needs full replan: Scrap old and replan from current drone pose

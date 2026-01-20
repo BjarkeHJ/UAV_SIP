@@ -120,24 +120,34 @@ void InspectionPlannerNode::planner_timer_callback() {
     std::shared_lock lock(map_->mutex_);
     planner_->update_pose(current_position_, current_yaw_);
 
-    // Check inspection completion
-    if (planner_->is_complete()) {
-        RCLCPP_INFO(this->get_logger(), "Inspection complete! Coverage: %.1f%%", 
-            planner_->statistics().coverage_ratio * 100.0f);
-        is_active_ = false;
-        lock.unlock();
-        return;
+    bool planned = planner_->plan();
+    lock.unlock();
+
+    if (planned) {
+        if (should_send_new_path()) {
+            send_path_goal();
+        }
+    }
+    else if (planner_->has_plan() && !goal_in_progress_ && !waiting_for_goal_response_) {
+        send_path_goal();
     }
 
-    // Plan
-    if (planner_->plan()) {
-        lock.unlock();
-        // send_path_goal();
-        if (should_send_new_path()) send_path_goal();
-    }
-    else lock.unlock();
+    // // Check inspection completion
+    // if (planner_->is_complete()) {
+    //     RCLCPP_INFO(this->get_logger(), "Inspection complete! Coverage: %.1f%%", 
+    //         planner_->statistics().coverage_ratio * 100.0f);
+    //     is_active_ = false;
+    //     lock.unlock();
+    //     return;
+    // }
 
-
+    // // Plan
+    // if (planner_->plan()) {
+    //     lock.unlock();
+    //     // send_path_goal();
+    //     if (should_send_new_path()) send_path_goal();
+    // }
+    // else lock.unlock();
 }
 
 void InspectionPlannerNode::safety_timer_callback() {
