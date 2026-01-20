@@ -153,7 +153,7 @@ bool InspectionPlanner::validate_path() {
     path_was_repaired_ = true;
     
     if (config_.debug_output) {
-        std::cout << "[InspectionPlanner] Local replan succesful - Path repaired" << std::endl;
+        std::cout << "[InspectionPlanner] Local replan successful - Path repaired" << std::endl;
     }
 
     return true;

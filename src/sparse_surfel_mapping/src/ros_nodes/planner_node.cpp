@@ -120,34 +120,34 @@ void InspectionPlannerNode::planner_timer_callback() {
     std::shared_lock lock(map_->mutex_);
     planner_->update_pose(current_position_, current_yaw_);
 
-    bool planned = planner_->plan();
-    lock.unlock();
+    // bool planned = planner_->plan();
+    // lock.unlock();
 
-    if (planned) {
-        if (should_send_new_path()) {
-            send_path_goal();
-        }
-    }
-    else if (planner_->has_plan() && !goal_in_progress_ && !waiting_for_goal_response_) {
-        send_path_goal();
-    }
-
-    // // Check inspection completion
-    // if (planner_->is_complete()) {
-    //     RCLCPP_INFO(this->get_logger(), "Inspection complete! Coverage: %.1f%%", 
-    //         planner_->statistics().coverage_ratio * 100.0f);
-    //     is_active_ = false;
-    //     lock.unlock();
-    //     return;
+    // if (planned) {
+    //     if (should_send_new_path()) {
+    //         send_path_goal();
+    //     }
+    // }
+    // else if (planner_->has_plan() && !goal_in_progress_ && !waiting_for_goal_response_) {
+    //     send_path_goal();
     // }
 
-    // // Plan
-    // if (planner_->plan()) {
-    //     lock.unlock();
-    //     // send_path_goal();
-    //     if (should_send_new_path()) send_path_goal();
-    // }
-    // else lock.unlock();
+    // Check inspection completion
+    if (planner_->is_complete()) {
+        RCLCPP_INFO(this->get_logger(), "Inspection complete! Coverage: %.1f%%", 
+            planner_->statistics().coverage_ratio * 100.0f);
+        is_active_ = false;
+        lock.unlock();
+        return;
+    }
+
+    // Plan
+    if (planner_->plan()) {
+        lock.unlock();
+        // send_path_goal();
+        if (should_send_new_path()) send_path_goal();
+    }
+    else lock.unlock();
 }
 
 void InspectionPlannerNode::safety_timer_callback() {
@@ -168,12 +168,14 @@ void InspectionPlannerNode::safety_timer_callback() {
     if (!path_valid) {
         RCLCPP_WARN(this->get_logger(), "Path replan failed - cancelling execution");
         if (goal_in_progress_) {
-            cancel_execution();
+            // cancel_execution();
+            planner_->request_replan();
         }
     }
     else if (was_repaired && goal_in_progress_) {
         RCLCPP_INFO(this->get_logger(), "Path repaired - sending updated trajectory");
-        cancel_execution();
+        // cancel_execution();
+        // planner_->request_replan();
         send_path_goal();
     }
 }
