@@ -247,12 +247,12 @@ void InspectionPlannerNode::process_path_progress(uint32_t new_index) {
     for (uint32_t idx = trajectory_active_index_; idx < new_index; ++idx) {
         int vp_idx = planner_->get_viewpoint_index_for_path_index(idx);
         
+        // this was an actual viewpoint (not rrt waypoint) -> mark as visited in coverage tracker
         if (vp_idx >= 0 && vp_idx > last_completed_viewpoint_idx_) {
-            // this was an actual viewpoint (not rrt waypoint) -> mark as visited in coverage tracker
-            RCLCPP_INFO(this->get_logger(), "Viewpoint reached!");
             std::shared_lock lock(map_->mutex_);
             planner_->mark_target_reached();
             lock.unlock();
+            RCLCPP_INFO(this->get_logger(), "Viewpoint reached - Current coverage: %.1f%%", planner_->coverage().coverage_ratio() * 100.0f);
 
             last_completed_viewpoint_idx_ = vp_idx;
         }

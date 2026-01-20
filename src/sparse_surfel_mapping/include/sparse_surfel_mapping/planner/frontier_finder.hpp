@@ -1,6 +1,7 @@
 #ifndef FRONTIER_FINDER_HPP_
 #define FRONTIER_FINDER_HPP_
 
+#include <queue>
 #include "sparse_surfel_mapping/common/planning_types.hpp"
 #include "sparse_surfel_mapping/mapper/surfel_map.hpp"
 
@@ -14,7 +15,7 @@ public:
 
     // find_frontier_from_coverage -> main
     std::vector<FrontierSurfel> find_frontiers_from_coverage(const VoxelKeySet& cumulative_coverage, const Eigen::Vector3f& expansion_center, float max_expansion_radius) const;
-    std::vector<FrontierCluster> cluster_frontiers(const std::vector<FrontierSurfel>& frontiers, float cluster_radius, size_t min_cluster_size) const;
+    std::vector<FrontierCluster> cluster_frontiers(const std::vector<FrontierSurfel>& frontiers, float wavefront_width, float max_cluster_radius, size_t min_cluster_size) const;
     void compute_cluster_view_suggestion(FrontierCluster& cluster, float optimal_distance) const;
 
 private:

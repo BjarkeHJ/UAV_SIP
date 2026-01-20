@@ -239,8 +239,20 @@ size_t Viewpoint::compute_visibility(const SurfelMap& map, bool check_occlusion)
 
                         if (occluded) continue;
                     }
-
+                    
                     state_.visible_voxels.insert(key);
+                    const auto& voxels = map.voxels();
+                    const auto& nb26 = voxels.get_neighbors_26(key);
+                    for (const auto& nb : nb26) {
+                        if (nb.get().has_valid_surfel()) {
+                            const Surfel& surfel = nb.get().surfel();
+                            if (frustum_calc_.is_surfel_visible(frustum_, state_.position, surfel.mean(), surfel.normal())) {
+                                const auto& nbkey = nb.get().key();
+                                state_.visible_voxels.insert(nbkey);
+                            }
+                        }
+                    }
+
                 }
             }
         }

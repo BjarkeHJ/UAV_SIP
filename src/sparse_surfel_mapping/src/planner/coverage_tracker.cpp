@@ -28,7 +28,7 @@ void CoverageTracker::record_visited_viewpoint(const Viewpoint& viewpoint) {
     visited_viewpoints_.push_back(state);
     stats_.viewpoints_visited = visited_viewpoints_.size();
 
-    // Update observed surface 
+    // Update observed surface
     mark_observed(viewpoint.visible_voxels(), viewpoint.id());
 }
 

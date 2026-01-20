@@ -74,8 +74,8 @@ private:
     double safety_rate_{10.0};
 
     // Trajectory executing params
-    float trajectory_pos_tolerance_{0.15f};
-    float trajectory_yaw_tolerance_{0.1f};
+    float trajectory_pos_tolerance_{0.1f};
+    float trajectory_yaw_tolerance_{0.05f};
     float trajectory_v_max_{1.0f};
     float trajectory_a_max_{0.3f};
 

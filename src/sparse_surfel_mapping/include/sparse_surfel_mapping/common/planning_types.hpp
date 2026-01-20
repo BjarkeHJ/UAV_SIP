@@ -16,11 +16,11 @@ namespace sparse_surfel_map {
 using VoxelKeySet = std::unordered_set<VoxelKey, VoxelKeyHash>;
 
 struct CameraConfig {
-    float hfov_deg{90.0f}; // half fov for ensure quality (??)
+    float hfov_deg{90.0f};
     float vfov_deg{60.0f}; 
     float min_range{0.1f};
     float max_range{8.0f};
-    float max_incidence_angle_deg{45.0f};  
+    float max_incidence_angle_deg{75.0f};  
 };
 
 struct CollisionConfig {
@@ -35,11 +35,12 @@ struct ViewpointConfig {
     float min_view_distance{1.0f};
     float max_view_distance{3.0f};
 
-    // Region growing parameters
+    // Viewpoint generation
     float max_expansion_radius{10.0f}; // how far away from the current viewpoint the frontier search can look (will pick closest valid frontier cluster)
-
+    
     // Frontier clustering
-    float frontier_cluster_radius{1.0f};
+    float frontier_wavefront_width{2.0f};
+    float frontier_cluster_radius{1.0f}; // wavefront clustering radius
     size_t min_cluster_size{4};
 
     // Coverage overlap

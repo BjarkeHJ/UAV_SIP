@@ -18,7 +18,8 @@ std::vector<FrontierSurfel> FrontierFinder::find_frontiers_from_coverage(const V
 
     // Iterate over all covered voxels 
     for (const auto& covered_key : cumulative_coverage) {
-        for (const auto& nb_key : get_neighbors_6(covered_key)) {
+        // for (const auto& nb_key : get_neighbors_6(covered_key)) {
+        for (const auto& nb_key : get_neighbors_26(covered_key)) {
             if (checked.count(nb_key) > 0) continue;
             checked.insert(nb_key);
 
@@ -61,45 +62,49 @@ std::vector<FrontierSurfel> FrontierFinder::find_frontiers_from_coverage(const V
     return frontiers;
 }
 
-std::vector<FrontierCluster> FrontierFinder::cluster_frontiers(const std::vector<FrontierSurfel>& frontiers, float cluster_radius, size_t min_cluster_size) const {
-    
+std::vector<FrontierCluster> FrontierFinder::cluster_frontiers(const std::vector<FrontierSurfel>& frontiers, float wavefront_width, float max_cluster_radius, size_t min_cluster_size) const {
     std::vector<FrontierCluster> clusters;
     if (frontiers.empty()) return clusters;
 
-    std::vector<bool> assigned(frontiers.size(), false);
+    float min_dist = frontiers.front().distance_to_expansion; // frontiers are already sorted by increasing distance to expansion center
+    float band_end = min_dist + wavefront_width; // bound the clustering area around the closest frontier
 
-    // greedy clustering: Start from closest frontiers (already sorted by distance to expansion center)
-    for (size_t i = 0; i < frontiers.size(); ++i) {
+    // extract only frontiers within the distance band "wavefront"
+    std::vector<const FrontierSurfel*> wavefront;
+    for (const auto& f : frontiers) {
+        if (f.distance_to_expansion <= band_end) {
+            wavefront.push_back(&f);
+        }
+        else {
+            break; // since sorted no more will likely be in wavefront
+        }
+    }
+
+    if (wavefront.empty()) return clusters; // should not happen
+
+    // cluster wavefront using spatial proximity and size limits
+    std::vector<bool> assigned(wavefront.size(), false);
+    const float max_radius_sq = max_cluster_radius * max_cluster_radius;
+    for (size_t i = 0; i < wavefront.size(); ++i) {
         if (assigned[i]) continue;
 
         FrontierCluster cluster;
-        cluster.surfels.push_back(frontiers[i]);
-        assigned[i] = true;
-        
-        // Add nearby to cluster
-        for (size_t j = i + 1; j < frontiers.size(); ++j) {
+        Eigen::Vector3f cluster_seed = wavefront[i]->position;
+
+        for (size_t j = i; j < wavefront.size(); ++j) {
             if (assigned[j]) continue;
 
-            bool close_enough = false;
-            for (const auto& cluster_surfel : cluster.surfels) {
-                if ((frontiers[j].position - cluster_surfel.position).norm() < cluster_radius) {
-                    close_enough = true;
-                    break;
-                }
-            }
-
-            if (close_enough) {
-                cluster.surfels.push_back(frontiers[j]);
+            float dist_sq = (wavefront[j]->position - cluster_seed).squaredNorm();
+            if (dist_sq <= max_radius_sq) {
+                cluster.surfels.push_back(*wavefront[j]);
                 assigned[j] = true;
             }
         }
 
-        // Keep reasonably cluster size
         if (cluster.surfels.size() >= min_cluster_size) {
-            cluster.compute_centroid();
+            cluster.compute_centroid(); // computes centroid, normal and priority
             clusters.push_back(std::move(cluster));
         }
-    
     }
 
     // sort cluster by priority (accumulation of frontier score)
@@ -159,7 +164,8 @@ std::vector<VoxelKey> FrontierFinder::get_neighbors_26(const VoxelKey& key) cons
 
 size_t FrontierFinder::count_uncovered_surface_neighbors(const VoxelKey& key, const VoxelKeySet& covered) const {
     size_t count = 0;
-    for (const auto& nb : get_neighbors_6(key)) {
+    // for (const auto& nb : get_neighbors_6(key)) {
+    for (const auto& nb : get_neighbors_26(key)) {
         if (has_surface(nb) && covered.count(nb) == 0) {
             count++;
         }

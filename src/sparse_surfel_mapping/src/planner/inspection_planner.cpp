@@ -88,7 +88,7 @@ bool InspectionPlanner::plan() {
     // Compute the current planned viewpoint (except front) visibility (only what viewpoint in plan sees)
     // Because front is used for seeding and expansion center computation
     VoxelKeySet plan_observed;
-    size_t desired_new = config_.max_viewpoints_in_plan - viewpoints_.size() - 1;
+    size_t desired_new = config_.max_viewpoints_in_plan - viewpoints_.size() + 1;
     if (!viewpoints_.empty()) {
         for (size_t i = 1; i < viewpoints_.size(); ++i) {
             Viewpoint& vp = viewpoints_[i];
@@ -98,15 +98,6 @@ bool InspectionPlanner::plan() {
             }
         }
     }
-    
-    // if (!viewpoints_.empty()) {
-    //     for (auto& vp : viewpoints_) {
-    //         vp.compute_visibility(*map_, true); // Recompute visibility - map could have updated
-    //         for (const auto& key : vp.visible_voxels()) {
-    //             plan_observed.insert(key);
-    //         }
-    //     }
-    // }
 
     if (desired_new <= 0) return false;
 
@@ -137,7 +128,6 @@ bool InspectionPlanner::plan() {
 
     // Order current viewpoints    
     for (auto& vp : new_vpts) {
-        std::cout << vp.position().transpose() << std::endl;
         viewpoints_.push_back(std::move(vp));
     }
 
@@ -250,6 +240,8 @@ void InspectionPlanner::mark_target_reached() {
     if (viewpoints_.empty()) return;
 
     Viewpoint& reached = viewpoints_.front();
+    reached.compute_visibility(*map_, true); // recompute visibility
+
     reached.set_status(ViewpointStatus::VISITED);
     coverage_tracker_.record_visited_viewpoint(reached);
     stats_.viewpoints_visited++;
