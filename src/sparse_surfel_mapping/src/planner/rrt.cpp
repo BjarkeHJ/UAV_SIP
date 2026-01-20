@@ -41,7 +41,7 @@ std::vector<Eigen::Vector3f> RRTPlanner::plan(const Eigen::Vector3f& start, cons
         int nearest_idx = find_nearest(tree, sample_point);
         Eigen::Vector3f new_pos = steer(tree[nearest_idx].position, sample_point);
 
-        // check if new pos is valid
+        // check if new pos + edge is valid
         if (!is_collision_free(new_pos)) continue;
         if (!is_edge_free(tree[nearest_idx].position, new_pos)) continue;
 
@@ -49,9 +49,9 @@ std::vector<Eigen::Vector3f> RRTPlanner::plan(const Eigen::Vector3f& start, cons
         int new_idx = static_cast<int>(tree.size());
         tree.push_back({new_pos, nearest_idx});
 
-        // check if goal is reached
+        // check if goal is reached (within one stepsize)
         float dist_to_goal = (new_pos - goal).norm();
-        if (dist_to_goal < config_.goal_threshold) {
+        if (dist_to_goal < config_.step_size) {
             // try direct connect
             if (is_edge_free(new_pos, goal)) {
                 tree.push_back({goal, new_idx});
@@ -111,7 +111,7 @@ bool RRTPlanner::is_edge_free(const Eigen::Vector3f& from, const Eigen::Vector3f
     if (length < 1e-6f) return is_collision_free(from);
 
     direction /= length;
-    int num_checks = static_cast<int>(std::ceil(length / config_.collision_check_step));
+    int num_checks = static_cast<int>(std::ceil(length / config_.step_size));
 
     for (int i = 0; i <= num_checks; ++i) {
         float t = static_cast<float>(i) / num_checks;
@@ -145,6 +145,7 @@ int RRTPlanner::find_nearest(const std::vector<Node>& tree, const Eigen::Vector3
 }
 
 Eigen::Vector3f RRTPlanner::steer(const Eigen::Vector3f& from, const Eigen::Vector3f& to) const {
+    // Take step from -> to
     Eigen::Vector3f direction = to - from;
     float dist = direction.norm();
     if (dist < config_.step_size) {

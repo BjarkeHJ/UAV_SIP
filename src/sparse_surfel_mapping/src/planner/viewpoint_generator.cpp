@@ -31,8 +31,8 @@ std::vector<Viewpoint> ViewpointGenerator::generate_viewpoints(const Viewpoint& 
     if (!map_) return {};
     auto t_start = std::chrono::high_resolution_clock::now();
 
-    // Create observation initial
-    VoxelKeySet already_covered = coverage_tracker_->observed_voxels(); // actual seen voxels
+    // Create observation initial (visited + current plan observations)
+    VoxelKeySet already_covered = coverage_tracker_->observed_voxels();
     if (!current_obs.empty()) {
         for (const auto& key : current_obs) {
             already_covered.insert(key); // estimate from previous viewpoints if chaining
@@ -77,12 +77,24 @@ std::vector<Viewpoint> ViewpointGenerator::build_chain(const VoxelKeySet& initia
 
         last_frontiers_found_ += frontiers.size();
         if (frontiers.empty()) {
+            if (config_.debug_output) {
+                std::cout << "  Could not find any frontiers!" << std::endl;
+            }
             break;
         }
 
         // Cluster frontiers
         std::vector<FrontierCluster> clusters = frontier_finder_.cluster_frontiers(frontiers, vp_config.frontier_cluster_radius, vp_config.min_cluster_size);
         last_clusters_formed_ += clusters.size();
+
+        if (config_.debug_output) {
+            std::cout << "  Formed: " << clusters.size() << " clusters with sizes:" << std::endl;
+            std::cout << "      ";
+            for (auto& c : clusters) {
+                std::cout << c.surfels.size() << " ";
+            }
+            std::cout << std::endl;
+        }
 
         if (clusters.empty()) {
             if (config_.debug_output) {
@@ -95,6 +107,9 @@ std::vector<Viewpoint> ViewpointGenerator::build_chain(const VoxelKeySet& initia
         std::vector<Viewpoint> candidates = generate_candidates_for_clusters(clusters, cumulative_coverage);
 
         if (candidates.empty()) {
+            if (config_.debug_output) {
+                std::cout << "  No candidates for clusters" << std::endl;
+            }
             break;
         }
 
@@ -103,7 +118,7 @@ std::vector<Viewpoint> ViewpointGenerator::build_chain(const VoxelKeySet& initia
 
         if (!selected) {
             if (config_.debug_output) {
-                std::cout << "  No acceptable candidate - chain terminated" << std::endl;
+                std::cout << "  No acceptable candidates - chain terminated" << std::endl;
             }
             break;
         }
@@ -301,10 +316,12 @@ Viewpoint* ViewpointGenerator::select_best_for_chain(std::vector<Viewpoint>& can
 
     // Select best acceptable candidate
     for (auto& vp : candidates) {
-        if (vp.coverage_score() < vp_config.min_new_coverage_ratio) {
+        // if (vp.coverage_score() < vp_config.min_new_coverage_ratio) {
+        if (vp.coverage_score() < 0.0f) {
             continue;
         }
-        if (vp.total_score() < 0.1f) {
+        // if (vp.total_score() < 0.1f) {
+        if (vp.total_score() < 0.0f) {
             continue;
         }
         return &vp;

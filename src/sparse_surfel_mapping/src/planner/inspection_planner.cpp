@@ -85,19 +85,28 @@ bool InspectionPlanner::plan() {
     planner_state_ = PlannerState::PLANNING;
     coverage_tracker_.update_statistics(map_->num_valid_surfels());
 
-    // Compute the current planned viewpoint visibility (only what viewpoint in plan sees)
-    VoxelKeySet already_observed;
-    size_t desired_new = config_.max_viewpoints_in_plan;
+    // Compute the current planned viewpoint (except front) visibility (only what viewpoint in plan sees)
+    // Because front is used for seeding and expansion center computation
+    VoxelKeySet plan_observed;
+    size_t desired_new = config_.max_viewpoints_in_plan - viewpoints_.size() - 1;
     if (!viewpoints_.empty()) {
-        for (auto& vp : viewpoints_) {
-            vp.compute_visibility(*map_, true); // Recompute visibility - map could have updated
+        for (size_t i = 1; i < viewpoints_.size(); ++i) {
+            Viewpoint& vp = viewpoints_[i];
+            vp.compute_visibility(*map_, true);
             for (const auto& key : vp.visible_voxels()) {
-                already_observed.insert(key);
+                plan_observed.insert(key);
             }
         }
-
-        desired_new -= viewpoints_.size() - 1; // desired new viewpoints
     }
+    
+    // if (!viewpoints_.empty()) {
+    //     for (auto& vp : viewpoints_) {
+    //         vp.compute_visibility(*map_, true); // Recompute visibility - map could have updated
+    //         for (const auto& key : vp.visible_voxels()) {
+    //             plan_observed.insert(key);
+    //         }
+    //     }
+    // }
 
     if (desired_new <= 0) return false;
 
@@ -105,16 +114,20 @@ bool InspectionPlanner::plan() {
     // If the planner needs full replan: Scrap old and replan from current drone pose
     if (needs_replan_) {
         viewpoints_.clear();
-        Viewpoint drone_vp(current_position_, current_yaw_, config_.camera);
-        drone_vp.compute_visibility(*map_, true);
-        new_vpts = viewpoint_generator_.generate_viewpoints(drone_vp, desired_new, already_observed);
+        Viewpoint seed_vp(current_position_, current_yaw_, config_.camera);
+        // if (coverage_tracker_.num_observed() > 0) {
+        //     // try to detect frontier 
+            
+        // }
+        seed_vp.compute_visibility(*map_, true);
+        new_vpts = viewpoint_generator_.generate_viewpoints(seed_vp, desired_new, plan_observed);
         if (!new_vpts.empty()) needs_replan_ = false;
     }
 
     // Space in current plan? Bound the number of viewpoints to optimize
     else if (viewpoints_.size() < config_.max_viewpoints_in_plan) {
         Viewpoint& seed_vp = viewpoints_.back(); // generate from last in queue 
-        new_vpts = viewpoint_generator_.generate_viewpoints(seed_vp, desired_new, already_observed);
+        new_vpts = viewpoint_generator_.generate_viewpoints(seed_vp, desired_new, plan_observed);
     }
 
     // Planner failed

@@ -19,8 +19,8 @@ struct CameraConfig {
     float hfov_deg{90.0f}; // half fov for ensure quality (??)
     float vfov_deg{60.0f}; 
     float min_range{0.1f};
-    float max_range{10.0f};
-    float max_incidence_angle_deg{30.0f};  
+    float max_range{8.0f};
+    float max_incidence_angle_deg{45.0f};  
 };
 
 struct CollisionConfig {
@@ -36,11 +36,11 @@ struct ViewpointConfig {
     float max_view_distance{3.0f};
 
     // Region growing parameters
-    float max_expansion_radius{10.0f};
+    float max_expansion_radius{10.0f}; // how far away from the current viewpoint the frontier search can look (will pick closest valid frontier cluster)
 
     // Frontier clustering
-    float frontier_cluster_radius{0.5f};
-    size_t min_cluster_size{1};
+    float frontier_cluster_radius{1.0f};
+    size_t min_cluster_size{4};
 
     // Coverage overlap
     float target_overlap_ratio{0.20f};
@@ -53,12 +53,10 @@ struct ViewpointConfig {
 };
 
 struct RRTConfig {
-    float step_size{0.5f};
-    float goal_bias{0.15};
-    size_t max_iterations{500};
-    float goal_threshold{0.3f};
-    float collision_check_step{0.1f};
-    float sample_margin{3.0f}; // around start
+    size_t max_iterations{1000};
+    float step_size{0.3f};
+    float goal_bias{0.1};
+    float sample_margin{10.0f}; // large corridor search (bounded search)
 };
 
 struct InspectionPlannerConfig {
