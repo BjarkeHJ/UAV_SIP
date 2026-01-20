@@ -31,10 +31,10 @@ std::vector<Eigen::Vector3f> RRTPlanner::plan(const Eigen::Vector3f& start, cons
         // sample random point with goal bias
         Eigen::Vector3f sample_point;
         if (goal_dist(rng_) < config_.goal_bias) {
-            sample_point = goal;
+            sample_point = goal; // goal_bias probability of sampling goal (drive towards goal)
         }
         else {
-            sample_point = sample(min_bound, max_bound);
+            sample_point = sample(min_bound, max_bound); // 1 - goal_bias probability of random sample within bounds
         }
 
         // find nearest node and steer toward sample
@@ -70,6 +70,19 @@ std::vector<Eigen::Vector3f> RRTPlanner::plan(const Eigen::Vector3f& start, cons
 
 bool RRTPlanner::is_straight_path_free(const Eigen::Vector3f& start, const Eigen::Vector3f& goal) const {
     return is_edge_free(start, goal);
+}
+
+int RRTPlanner::validate_path(const std::vector<Eigen::Vector3f>& path) const {
+    if (path.size() < 2) return -1;
+
+    for (size_t i = 0; i < path.size() - 1; ++i) {
+        // check if edge is still valid between waypoints
+        if (!is_edge_free(path[i], path[i+1])) {
+            return static_cast<int>(i);
+        }
+    }
+
+    return -1; // valid path
 }
 
 std::vector<Eigen::Vector3f> RRTPlanner::simplify_path(const std::vector<Eigen::Vector3f>& path) const {
@@ -165,7 +178,5 @@ std::vector<Eigen::Vector3f> RRTPlanner::extract_path(const std::vector<Node>& t
     std::reverse(path.begin(), path.end());
     return path;
 }
-
-
 
 } // namespace

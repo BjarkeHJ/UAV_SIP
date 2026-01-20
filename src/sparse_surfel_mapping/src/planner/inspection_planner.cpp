@@ -78,6 +78,74 @@ bool InspectionPlanner::validate_viewpoints() {
     return !viewpoints_.empty();
 }
 
+bool InspectionPlanner::validate_path() {
+    if (!map_ || !path_cache_valid_ || cached_path_.empty()) return true;
+
+    int invalid_index = rrt_planner_.validate_path(cached_path_.positions);
+    if (invalid_index < 0) return true; // path is valid
+
+    if (config_.debug_output) {
+        std::cout << "[InspectionPlanner] Path collsion - Local Replanning..." << std::endl;
+    }
+
+    int next_vp_path_idx = -1;
+    int next_vp_idx = -1;
+    for (size_t i = invalid_index; i < cached_path_.viewpoint_indices.size(); ++i) {
+        // is actual viewpoint?
+        if (cached_path_.viewpoint_indices[i] >= 0) {
+            next_vp_path_idx = static_cast<int>(i);
+            next_vp_idx = cached_path_.viewpoint_indices[i];
+            break;
+        }
+    }
+
+    if (next_vp_path_idx < 0 || next_vp_idx < 0) {
+        // no viewpoint after collision - full replan
+        path_cache_valid_ = false;
+        return false;
+    }
+
+    const Eigen::Vector3f replan_start = cached_path_.positions[invalid_index];
+    const Eigen::Vector3f replan_goal = cached_path_.positions[next_vp_path_idx];
+
+    auto new_segment = rrt_planner_.plan(replan_start, replan_goal);
+    if (new_segment.empty()) {
+        // local replan failed - full replan
+        path_cache_valid_ = false;
+        return false;
+    }
+
+    RRTPath repaired_path;
+    for (int i = 0; i <= invalid_index; ++i) {
+        repaired_path.positions.push_back(cached_path_.positions[i]);
+        repaired_path.yaws.push_back(cached_path_.yaws[i]);
+        repaired_path.viewpoint_indices.push_back(cached_path_.viewpoint_indices[i]);
+    }
+
+    // add new rrt segment (skip first and last as they will be dupes)
+    for (size_t i = 1; i < new_segment.size() - 1; ++i) {
+        repaired_path.positions.push_back(new_segment[i]);
+        Eigen::Vector3f to_next = new_segment[i + 1] - new_segment[i];
+        repaired_path.yaws.push_back(std::atan2(to_next.y(), to_next.x()));
+        repaired_path.viewpoint_indices.push_back(-1);
+    }
+
+    for (size_t i = next_vp_path_idx; i < cached_path_.positions.size(); ++i) {
+        repaired_path.positions.push_back(cached_path_.positions[i]);
+        repaired_path.yaws.push_back(cached_path_.yaws[i]);
+        repaired_path.viewpoint_indices.push_back(cached_path_.viewpoint_indices[i]);
+    }
+
+    cached_path_ = std::move(repaired_path);
+    path_was_repaired_ = true;
+    
+    if (config_.debug_output) {
+        std::cout << "[InspectionPlanner] Local replan succesful - Path repaired" << std::endl;
+    }
+
+    return true;
+}
+
 bool InspectionPlanner::plan() {
     if (!map_ || planner_state_ == PlannerState::EMERGENCY_STOP) return false;
     
@@ -177,7 +245,6 @@ RRTPath InspectionPlanner::generate_path() {
     if (viewpoints_.empty()) return path;
 
     Eigen::Vector3f prev_pos = current_position_;
-    // float prev_yaw = current_yaw_;
 
     for (size_t vp_idx = 0; vp_idx < viewpoints_.size(); ++vp_idx) {
         const Viewpoint& vp = viewpoints_[vp_idx];
@@ -208,11 +275,11 @@ RRTPath InspectionPlanner::generate_path() {
         path.viewpoint_indices.push_back(static_cast<int>(vp_idx));
 
         prev_pos = vp.position();
-        // prev_yaw = vp.yaw();
     }
 
     cached_path_ = path;
     path_cache_valid_ = true;
+    path_was_repaired_ = false; // fresh path...
 
     return cached_path_;
 }
@@ -289,6 +356,9 @@ void InspectionPlanner::reset() {
     stats_ = PlanningStatistics();
     planner_state_ = PlannerState::IDLE;
     needs_replan_ = true;
+    cached_path_ = RRTPath();
+    path_cache_valid_ = false;
+    path_was_repaired_ = false;
     
     if (config_.debug_output) {
         std::cout << "[InspectionPlanner] Reset complete" << std::endl;

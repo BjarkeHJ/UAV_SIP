@@ -45,7 +45,7 @@ struct ViewpointConfig {
 
     // Coverage overlap
     float target_overlap_ratio{0.20f};
-    float min_new_coverage_ratio{0.01f};
+    float min_new_coverage_ratio{0.1f};
 
     // Scoring
     float new_coverage_weight{0.5f};
@@ -67,7 +67,7 @@ struct InspectionPlannerConfig {
     RRTConfig rrt;
 
     // Planning strategy
-    size_t max_viewpoints_in_plan{3};
+    size_t max_viewpoints_in_plan{1};
 
     // Viewpoint Ordering
     size_t two_opt_iterations{100};

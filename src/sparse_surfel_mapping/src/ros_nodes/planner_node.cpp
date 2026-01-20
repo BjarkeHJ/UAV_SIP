@@ -64,20 +64,20 @@ void InspectionPlannerNode::declare_parameters() {
     // Trajectory
 
     // Target threshold
-    this->declare_parameter("target_reach_th", 0.5);
-    this->declare_parameter("target_yaw_th", 0.3);
+    this->declare_parameter("target_reach_th", 0.1);
+    this->declare_parameter("target_yaw_th", 0.05);
 
     // Camera
     this->declare_parameter("camera.hfov_deg", 90.0);
     this->declare_parameter("camera.vfov_deg", 60.0);
     this->declare_parameter("camera.min_range",0.5);
-    this->declare_parameter("camera.max_range", 15.0);
+    this->declare_parameter("camera.max_range", 8.0);
 
     // Viewpoint
 
     
     // Collision safety
-    this->declare_parameter("collision.robot_radius", 0.5);
+    this->declare_parameter("collision.robot_radius", 0.3);
     this->declare_parameter("collision.safety_distance", 0.5);
     this->declare_parameter("collision.path_resolution", 0.1);
 
@@ -141,17 +141,31 @@ void InspectionPlannerNode::planner_timer_callback() {
 }
 
 void InspectionPlannerNode::safety_timer_callback() {
-    if (!is_active_ || !map_) return;
+    if (!is_active_ || !map_ || !planner_) return;
     if (emergency_stop_active_) return;
 
     if (!get_current_pose(current_position_, current_yaw_)) return;
-    
     planner_->update_pose(current_position_, current_yaw_);
 
     std::shared_lock lock(map_->mutex_);
     planner_->validate_viewpoints();
+
+    bool path_valid = planner_->validate_path();
+    bool was_repaired = planner_->was_path_repaired();
+    planner_->clear_repair_flag();
     lock.unlock();
 
+    if (!path_valid) {
+        RCLCPP_WARN(this->get_logger(), "Path replan failed - cancelling execution");
+        if (goal_in_progress_) {
+            cancel_execution();
+        }
+    }
+    else if (was_repaired && goal_in_progress_) {
+        RCLCPP_INFO(this->get_logger(), "Path repaired - sending updated trajectory");
+        cancel_execution();
+        send_path_goal();
+    }
 }
 
 void InspectionPlannerNode::send_path_goal() {

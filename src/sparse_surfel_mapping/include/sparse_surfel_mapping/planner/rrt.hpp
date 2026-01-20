@@ -19,8 +19,9 @@ public:
 
     std::vector<Eigen::Vector3f> plan(const Eigen::Vector3f& start, const Eigen::Vector3f& goal);
     bool is_straight_path_free(const Eigen::Vector3f& start, const Eigen::Vector3f& goal) const;
-
     std::vector<Eigen::Vector3f> simplify_path(const std::vector<Eigen::Vector3f>& path) const;
+
+    int validate_path(const std::vector<Eigen::Vector3f>& path) const; // return the index of first invalid edge (-1 if path is valid)
 
 private:
     struct Node {

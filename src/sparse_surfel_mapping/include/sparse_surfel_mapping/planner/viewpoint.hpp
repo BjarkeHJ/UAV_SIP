@@ -54,8 +54,8 @@ public:
     uint64_t id() const { return state_.id; }
     ViewpointStatus status() const { return state_.status; }
 
-    void set_position(const Eigen::Vector3f& pos) { state_.position = pos; }
-    void set_yaw(float yaw) { state_.yaw = yaw; }
+    void set_position(const Eigen::Vector3f& pos) { state_.position = pos; frustum_computed_ = false; }
+    void set_yaw(float yaw) { state_.yaw = yaw; frustum_computed_ = false; }
     void set_id(uint64_t id) { state_.id = id; }
     void set_status(ViewpointStatus status) { state_.status = status; }
     
