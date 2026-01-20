@@ -90,7 +90,7 @@ bool InspectionPlanner::validate_path() {
 
     int next_vp_path_idx = -1;
     int next_vp_idx = -1;
-    for (size_t i = invalid_index; i < cached_path_.viewpoint_indices.size(); ++i) {
+    for (size_t i = invalid_index + 1; i < cached_path_.viewpoint_indices.size(); ++i) {
         // is actual viewpoint?
         if (cached_path_.viewpoint_indices[i] >= 0) {
             next_vp_path_idx = static_cast<int>(i);
@@ -135,22 +135,29 @@ bool InspectionPlanner::validate_path() {
         repaired_path.viewpoint_indices.push_back(cached_path_.viewpoint_indices[i]);
     }
 
-    // add new rrt segment (skip first and last as they will be dupes)
-    for (size_t i = 1; i < new_segment.size() - 1; ++i) {
+    // add new rrt segment (skip first)
+    for (size_t i = 1; i < new_segment.size() ; ++i) {
         repaired_path.positions.push_back(new_segment[i]);
         Eigen::Vector3f to_next = new_segment[i + 1] - new_segment[i];
         repaired_path.yaws.push_back(std::atan2(to_next.y(), to_next.x()));
         repaired_path.viewpoint_indices.push_back(-1);
     }
 
-    for (size_t i = next_vp_path_idx; i < cached_path_.positions.size(); ++i) {
+    for (size_t i = next_vp_path_idx + 1; i < cached_path_.positions.size(); ++i) {
         repaired_path.positions.push_back(cached_path_.positions[i]);
         repaired_path.yaws.push_back(cached_path_.yaws[i]);
         repaired_path.viewpoint_indices.push_back(cached_path_.viewpoint_indices[i]);
     }
 
+    int final_check = rrt_planner_.validate_path(repaired_path.positions);
+
+    if (final_check >= 0) {
+        path_cache_valid_ = false;
+        needs_replan_ = true;
+        return false;
+    }
+
     cached_path_ = std::move(repaired_path);
-    path_was_repaired_ = true;
     
     if (config_.debug_output) {
         std::cout << "[InspectionPlanner] Local replan successful - Path repaired" << std::endl;
@@ -331,6 +338,7 @@ void InspectionPlanner::mark_target_reached() {
     
     // Remove the reached viewpoint
     viewpoints_.pop_front();
+    path_cache_valid_ = false;
 
     if (viewpoints_.empty()) {
         needs_replan_ = true;
