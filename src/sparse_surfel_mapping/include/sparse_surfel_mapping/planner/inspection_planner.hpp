@@ -36,7 +36,7 @@ public:
     
     bool validate_path();
     bool was_path_repaired() const { return path_was_repaired_; }
-    void clear_repair_flag() const { path_was_repaired_ = false; }
+    void clear_repair_flag() { path_was_repaired_ = false; }
 
     void mark_target_reached(); // mark front viewpoint visited
     bool is_complete();

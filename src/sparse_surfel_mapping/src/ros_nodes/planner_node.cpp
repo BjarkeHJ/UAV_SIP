@@ -77,7 +77,7 @@ void InspectionPlannerNode::declare_parameters() {
 
     
     // Collision safety
-    this->declare_parameter("collision.robot_radius", 0.3);
+    this->declare_parameter("collision.robot_radius", 0.5);
     this->declare_parameter("collision.safety_distance", 0.5);
     this->declare_parameter("collision.path_resolution", 0.1);
 
@@ -180,7 +180,6 @@ void InspectionPlannerNode::send_path_goal() {
     }
 
     // Get current path
-    // nav_msgs::msg::Path nav_path = convert_to_nav_path();
     current_planned_path_ = planner_->generate_path(); // generate collision free path with rrt
     if (current_planned_path_.empty()) {
         RCLCPP_WARN(this->get_logger(), "Empty planned path, not sending goal...");
@@ -188,7 +187,6 @@ void InspectionPlannerNode::send_path_goal() {
     }
 
     nav_msgs::msg::Path nav_path = convert_to_nav_path(current_planned_path_);
-
     if (nav_path.poses.empty()) {
         RCLCPP_WARN(this->get_logger(), "Empty path, not sending goal...");
         return;
@@ -253,7 +251,6 @@ void InspectionPlannerNode::feedback_callback(GoalHandleExecutePath::SharedPtr, 
         process_path_progress(new_index);
         trajectory_active_index_ = new_index;
     }
-
 }
 
 void InspectionPlannerNode::process_path_progress(uint32_t new_index) {
