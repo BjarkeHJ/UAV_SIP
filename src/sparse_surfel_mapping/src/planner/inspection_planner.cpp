@@ -150,7 +150,6 @@ bool InspectionPlanner::validate_path() {
     }
 
     int final_check = rrt_planner_.validate_path(repaired_path.positions);
-
     if (final_check >= 0) {
         path_cache_valid_ = false;
         needs_replan_ = true;
@@ -245,6 +244,8 @@ void InspectionPlanner::order_viewpoints() {
 }
 
 void InspectionPlanner::two_opt_optimize() {
+
+
     return; // TODO
 }
 
@@ -275,7 +276,13 @@ RRTPath InspectionPlanner::generate_path() {
             if (config_.debug_output) {
                 std::cout << "[InspectionPlanner] Warning: RRT failed!" << std::endl;
             }
-            rrt_path = {prev_pos, vp.position()};
+
+            if (vp_idx + 1 < viewpoints_.size()) {
+                viewpoints_.erase(viewpoints_.begin() + vp_idx + 1); // remove this viewpoint (and continue)
+                // viewpoints_.erase(viewpoints_.begin() + vp_idx + 1, viewpoints_.end()); // remove all following viewpoints (and break)
+            }
+            continue;
+            // break; // rest of path needs to be replanned first
         }
 
         // add rrt intermediate waypoints (skip first if not actually first - to aviud dupes)
@@ -338,6 +345,8 @@ void InspectionPlanner::mark_target_reached() {
     
     // Remove the reached viewpoint
     viewpoints_.pop_front();
+
+    // instead of invalidating current path cache immediately - just remove from the rrt path upto-and-including the popped viewpoint? 
     path_cache_valid_ = false;
 
     if (viewpoints_.empty()) {

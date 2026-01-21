@@ -65,6 +65,8 @@ size_t SurfelMap::commit_update() {
     for (auto& [key, updates] : pending_updates_) {
         if (updates.empty()) continue;
 
+        // check 26-nb region for existing surfels -> If update_point-surfel_mean vector is aligned with surfel-normal it is behind known surface -> switch to known voxel
+
         Voxel& voxel = spatial_hash_.get_or_create(key);
         voxel.integrate_points(updates);
         voxel.finalize_surfel();

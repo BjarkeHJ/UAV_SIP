@@ -10,6 +10,8 @@ RRTPlanner::RRTPlanner(const RRTConfig& config) : config_(config) {}
 std::vector<Eigen::Vector3f> RRTPlanner::plan(const Eigen::Vector3f& start, const Eigen::Vector3f& goal) {
     if (!map_) return {};
 
+    auto rrt_ts = std::chrono::high_resolution_clock::now();
+    
     if (is_straight_path_free(start, goal)) {
         return {start, goal};
     }
@@ -65,7 +67,12 @@ std::vector<Eigen::Vector3f> RRTPlanner::plan(const Eigen::Vector3f& start, cons
     
     // extract, simplify, and return
     auto path = extract_path(tree, goal_node);
-    return simplify_path(path);
+    auto path_simplified = simplify_path(path);
+
+    auto rrt_te = std::chrono::high_resolution_clock::now();
+    std::cout << "RRT Computation time: " << std::chrono::duration<double, std::milli>(rrt_te - rrt_ts).count() << " ms" << std::endl;
+    
+    return path_simplified;
 }
 
 bool RRTPlanner::is_straight_path_free(const Eigen::Vector3f& start, const Eigen::Vector3f& goal) const {
@@ -83,29 +90,6 @@ int RRTPlanner::validate_path(const std::vector<Eigen::Vector3f>& path) const {
     }
 
     return -1; // valid path
-}
-
-std::vector<Eigen::Vector3f> RRTPlanner::simplify_path(const std::vector<Eigen::Vector3f>& path) const {
-    if (path.size() <= 2) return path;
-
-    std::vector<Eigen::Vector3f> simplified;
-    simplified.push_back(path.front());
-
-    size_t current = 0;
-    while (current < path.size() - 1) {
-        // find furthest visible point from current
-        size_t furthest = current + 1;
-        for (size_t i = current + 2; i < path.size(); ++i) {
-            if (is_edge_free(path[current], path[i])) {
-                furthest = i;
-            }
-        }
-
-        simplified.push_back(path[furthest]);
-        current = furthest;
-    }
-
-    return simplified;
 }
 
 bool RRTPlanner::is_collision_free(const Eigen::Vector3f& point) const {
@@ -177,6 +161,29 @@ std::vector<Eigen::Vector3f> RRTPlanner::extract_path(const std::vector<Node>& t
 
     std::reverse(path.begin(), path.end());
     return path;
+}
+
+std::vector<Eigen::Vector3f> RRTPlanner::simplify_path(const std::vector<Eigen::Vector3f>& path) const {
+    if (path.size() <= 2) return path;
+
+    std::vector<Eigen::Vector3f> simplified;
+    simplified.push_back(path.front());
+
+    size_t current = 0;
+    while (current < path.size() - 1) {
+        // find furthest visible point from current
+        size_t furthest = current + 1;
+        for (size_t i = current + 2; i < path.size(); ++i) {
+            if (is_edge_free(path[current], path[i])) {
+                furthest = i;
+            }
+        }
+
+        simplified.push_back(path[furthest]);
+        current = furthest;
+    }
+
+    return simplified;
 }
 
 } // namespace
