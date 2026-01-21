@@ -108,7 +108,7 @@ void TrajectoryNode::update_reference(float dt) {
             // simple chase
             Eigen::Vector3f dir = err.normalized();
             Eigen::Vector3f vel_des = dir * vel_max_;
-
+            
             Eigen::Vector3f dv = vel_des - vel_ref_;
             float dv_norm = dv.norm();
             float dv_max = acc_max_ * dt;
@@ -158,41 +158,37 @@ void TrajectoryNode::update_reference(float dt) {
         yaw_ref_ = yaw_step_towards(yaw_goal, dist_last, dt);
         return;
     }
-
-    // Otherwise track the next waypoint (active_index_+1) with a carrot/lookahead
-    const auto &tgt_pose = active_path_.poses[active_index_ + 1].pose;
+    
+    const auto& tgt_pose = active_path_.poses[active_index_ + 1].pose;
     Eigen::Vector3f target(tgt_pose.position.x, tgt_pose.position.y, tgt_pose.position.z);
+    float dist_to_target = (target - pos_ref_).norm();
+    float current_speed = vel_ref_.norm();
 
-    Eigen::Vector3f d = target - pos_ref_;
-    float dist = d.norm();
+    // Compute the current distance it will take to stop
+    float stopping_dist = (current_speed * current_speed) / (2.0f *acc_max_);
+    stopping_dist += pos_tol_ * 2.0f;
 
-    // Direction to target
-    Eigen::Vector3f dir = Eigen::Vector3f::Zero();
-    if (dist > 1e-6f) dir = d / dist;
+    float speed_limit = vel_max_;
+    
+    if (dist_to_target < stopping_dist) {
+        speed_limit = std::sqrt(2.0f * acc_max_ * std::max(dist_to_target - pos_tol_, 0.01f));
+        speed_limit = std::max(speed_limit, 0.1f);
+    }
 
-    // Carrot point
-    float step = std::min(lookahead_, dist);
-    Eigen::Vector3f carrot = pos_ref_ + dir * step;
+    Eigen::Vector3f dir = (target - pos_ref_).normalized();
+    Eigen::Vector3f vel_des = dir * std::min(speed_limit, vel_max_);
 
-    // Desired velocity towards carrot (cap by vel_max_)
-    Eigen::Vector3f vel_des = (carrot - pos_ref_) / dt;
-    float vnorm = vel_des.norm();
-    if (vnorm > vel_max_ && vnorm > 1e-6f) vel_des *= (vel_max_ / vnorm);
-
-    // Accel limit
     Eigen::Vector3f dv = vel_des - vel_ref_;
     float dv_norm = dv.norm();
     float dv_max = acc_max_ * dt;
-    if (dv_norm > dv_max && dv_norm > 1e-6f) dv *= (dv_max / dv_norm);
-    vel_ref_ += dv;
+    if (dv_norm > dv_max) dv *= (dv_max / dv_norm);
 
-    // Integrate position
+    vel_ref_ += dv;
     pos_ref_ += vel_ref_ * dt;
 
     // Yaw: ALWAYS follow waypoint yaw (shortest-angle), distance-weighted turning
     float yaw_goal = -quat_to_yaw(tgt_pose.orientation);
-    yaw_ref_ = yaw_step_towards(yaw_goal, dist, dt);
-
+    yaw_ref_ = yaw_step_towards(yaw_goal, dist_to_target, dt);
 }
 
 rclcpp_action::GoalResponse TrajectoryNode::handle_goal(const rclcpp_action::GoalUUID&, std::shared_ptr<const ExecutePath::Goal> goal) {

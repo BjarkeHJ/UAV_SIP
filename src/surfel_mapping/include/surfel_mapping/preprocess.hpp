@@ -260,7 +260,7 @@ private:
         const float max_jump = params_.max_depth_jump_m;
 
         const float inv_2sigma_sp_sq = 1.0f / (2.0f * spatial_sigma * spatial_sigma);
-        const float inv_2sigmag_dp_sq = 1.0f / (2.0f * depth_sigma * depth_sigma);
+        const float inv_2sigma_dp_sq = 1.0f / (2.0f * depth_sigma * depth_sigma);
 
         const int kernel_size = 2 * R + 1;
         std::vector<float> spatial_kernel(kernel_size);
@@ -302,7 +302,7 @@ private:
                         if (std::fabs(dr) > max_jump) continue;
 
                         const float w_spatial = spatial_kernel[uu - u + R];
-                        const float w_depth = std::exp(-dr * dr * inv_2sigmag_dp_sq);
+                        const float w_depth = std::exp(-dr * dr * inv_2sigma_dp_sq);
                         const float w = w_spatial * w_depth;
 
                         weight_sum += w;
@@ -341,7 +341,7 @@ private:
                         if (std::fabs(dr) > max_jump) continue;
 
                         const float w_spatial = spatial_kernel[vv - v + R];
-                        const float w_depth = std::exp(-dr * dr * inv_2sigmag_dp_sq);
+                        const float w_depth = std::exp(-dr * dr * inv_2sigma_dp_sq);
                         const float w = w_spatial * w_depth;
 
                         weight_sum += w;
