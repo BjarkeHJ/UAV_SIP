@@ -53,7 +53,6 @@ public:
     const PlanningStatistics& statistics() const { return stats_; }
     const CoverageTracker& coverage() const { return coverage_tracker_; }
 
-    void clear_emergency(); // allow replan again
     void request_replan() { needs_replan_ = true; }
     void reset();
     

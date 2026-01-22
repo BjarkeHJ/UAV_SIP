@@ -41,7 +41,7 @@ struct ViewpointConfig {
     // Frontier clustering
     float frontier_wavefront_width{2.0f};
     float frontier_cluster_radius{1.0f}; // wavefront clustering radius
-    size_t min_cluster_size{1};
+    size_t min_cluster_size{5};
 
     // Coverage overlap
     float target_overlap_ratio{0.20f};
@@ -67,7 +67,7 @@ struct InspectionPlannerConfig {
     RRTConfig rrt;
 
     // Planning strategy
-    size_t max_viewpoints_in_plan{3};
+    size_t max_viewpoints_in_plan{2};
 
     // Viewpoint Ordering
     size_t two_opt_iterations{100};

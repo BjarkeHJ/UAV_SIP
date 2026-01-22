@@ -52,9 +52,9 @@ Eigen::Vector3f Voxel::max_corner(float voxel_size) const {
 bool Voxel::contains_point(const Eigen::Vector3f& point, float voxel_size) const {
     const Eigen::Vector3f min = min_corner(voxel_size);
     const Eigen::Vector3f max = max_corner(voxel_size);
-    return point.x() >= min.x() && point.x() >= max.x() &&
-           point.y() >= min.y() && point.y() >= max.y() &&
-           point.z() >= min.z() && point.z() >= max.z();
+    return point.x() >= min.x() && point.x() < max.x() &&
+           point.y() >= min.y() && point.y() < max.y() &&
+           point.z() >= min.z() && point.z() < max.z();
 }
 
 
