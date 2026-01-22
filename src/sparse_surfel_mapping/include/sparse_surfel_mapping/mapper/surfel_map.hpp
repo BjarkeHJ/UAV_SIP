@@ -1,9 +1,10 @@
 #ifndef SURFEL_MAP_HPP_
 #define SURFEL_MAP_HPP_
 
+#include <iostream>
 #include <chrono>
 #include <map>
-// #include <mutex>
+#include <set>
 #include <shared_mutex>
 
 #include "sparse_surfel_mapping/mapper/spatial_hash.hpp"
@@ -47,6 +48,7 @@ public:
     void reset(const SurfelMapConfig& config);
     size_t prune_invalid_surfels();
     size_t prune_outside_box(const Eigen::Vector3f& min_bound, const Eigen::Vector3f& max_bound);
+    size_t prune_shadow_surfels(float normal_th = 0.85f); // 0.85 ~32 degree
 
     // Map Statistics
     MapStatistics get_statistics() const;

@@ -129,9 +129,9 @@ size_t SpatialHash::prune_outside_bounds(const Eigen::Vector3f& min_bound, const
     auto it = voxels_.begin();
     while (it != voxels_.end()) {
         const Eigen::Vector3f center = key_to_point(it->first);
-        bool inside = center.x() >= min_bound.x() && center.x() >= max_bound.x() &&
-                      center.y() >= min_bound.y() && center.y() >= max_bound.y() &&
-                      center.z() >= min_bound.z() && center.z() >= max_bound.z();
+        bool inside = center.x() >= min_bound.x() && center.x() <= max_bound.x() &&
+                      center.y() >= min_bound.y() && center.y() <= max_bound.y() &&
+                      center.z() >= min_bound.z() && center.z() <= max_bound.z();
         if (!inside) {
             it = voxels_.erase(it);
             removed++;
@@ -168,7 +168,6 @@ MapStatistics SpatialHash::compute_statistics() const {
 }
 
 // Neighbor queries
-
 std::vector<std::reference_wrapper<const Voxel>> SpatialHash::get_neighbors_6(const VoxelKey& key) const {
     std::vector<std::reference_wrapper<const Voxel>> nbs;
     nbs.reserve(6);
@@ -199,7 +198,7 @@ std::vector<std::reference_wrapper<const Voxel>> SpatialHash::get_neighbors_26(c
         for (int32_t dy = -1; dy <= 1; ++dy) {
             for (int32_t dz = -1; dz <= 1; ++dz) {
 
-                if (dz == 0 && dy == 0 && dz == 0) continue; // skip center (self)
+                if (dx == 0 && dy == 0 && dz == 0) continue; // skip center (self)
 
                 VoxelKey nb_key{key.x + dx, key.y + dy, key.z + dz};
                 auto voxel = get(nb_key); // std::optional

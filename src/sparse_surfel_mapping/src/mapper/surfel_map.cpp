@@ -29,7 +29,6 @@ SurfelMap::SurfelMap(const SurfelMapConfig& config)
     , update_in_progress_(false)
 {}
 
-
 void SurfelMap::begin_update() {
     pending_updates_.clear();
     update_in_progress_ = true;
@@ -59,32 +58,24 @@ void SurfelMap::associate_points(const std::vector<PointWithNormal>& pns, const 
 
 size_t SurfelMap::commit_update() {
     const auto start_time = Clock::now();
-
     size_t points_integrated = 0;
-
+    
     for (auto& [key, updates] : pending_updates_) {
         if (updates.empty()) continue;
-
-        // check 26-nb region for existing surfels -> If update_point-surfel_mean vector is aligned with surfel-normal it is behind known surface -> switch to known voxel
-
         Voxel& voxel = spatial_hash_.get_or_create(key);
         voxel.integrate_points(updates);
         voxel.finalize_surfel();
-
         points_integrated += updates.size();
     }
-
+    
     total_points_integrated_ += points_integrated;
-
     pending_updates_.clear();
     update_in_progress_ = false;
 
+    prune_shadow_surfels();
+
     const auto end_time = Clock::now();
     last_commit_time_ms_ = std::chrono::duration<double, std::milli>(end_time - start_time).count();
-
-    if (config_.debug_output) {
-        // bla bla
-    }
 
     return points_integrated;
 }
@@ -93,7 +84,8 @@ size_t SurfelMap::integrate_points(const std::vector<PointWithNormal>& pns, cons
     // full monty
     begin_update();
     associate_points(pns, transform);
-    return commit_update();
+    size_t integrated = commit_update();
+    return integrated;
 }
 
 size_t SurfelMap::pending_update_count() const {
@@ -170,7 +162,7 @@ std::vector<std::reference_wrapper<const Surfel>> SurfelMap::query_surfels_in_ra
     const auto voxels = spatial_hash_.get_neighbors_in_radius(center, radius);
 
     for (const auto& voxel : voxels) {
-        if (!voxel.get().has_valid_surfel()) {
+        if (voxel.get().has_valid_surfel()) {
             result.push_back(std::cref(voxel.get().surfel()));
         }
     }
@@ -178,9 +170,7 @@ std::vector<std::reference_wrapper<const Surfel>> SurfelMap::query_surfels_in_ra
     return result;
 }
 
-
 // Map Management
-
 void SurfelMap::clear() {
     spatial_hash_.clear();
     pending_updates_.clear();
@@ -202,6 +192,43 @@ size_t SurfelMap::prune_invalid_surfels() {
 
 size_t SurfelMap::prune_outside_box(const Eigen::Vector3f& min_bound, const Eigen::Vector3f& max_bound) {
     return spatial_hash_.prune_outside_bounds(min_bound, max_bound);
+}
+
+size_t SurfelMap::prune_shadow_surfels(float normal_th) {
+    std::set<VoxelKey> to_remove;
+
+    const auto keys = spatial_hash_.get_valid_surfel_keys();
+    for (const auto& key : keys) {
+        if (to_remove.count(key)) continue;
+
+        auto voxel_opt = spatial_hash_.get(key);
+        if (!voxel_opt || !voxel_opt->get().has_valid_surfel()) continue;
+
+        const Surfel& surfel = voxel_opt->get().surfel();
+        const Eigen::Vector3f& mean = surfel.mean();
+        const Eigen::Vector3f& normal = surfel.normal();
+
+        Eigen::Vector3f behind_point = mean - normal * config_.voxel_size;
+        VoxelKey behind_key = compute_voxel_key(behind_point);
+        auto behind_opt = spatial_hash_.get(behind_key);
+        if (!behind_opt || !behind_opt->get().has_valid_surfel()) continue;
+
+        const Surfel& behind_surfel = behind_opt->get().surfel();
+
+        float normal_dot = normal.dot(behind_surfel.normal());
+        if (normal_dot < normal_th) continue;
+        
+        float signed_dist = (behind_surfel.mean() - mean).dot(normal);
+        if (signed_dist >= 0.0f) continue; // not behind
+
+        to_remove.insert(behind_key);
+    }
+
+    for (const auto& key : to_remove) {
+        spatial_hash_.remove(key);
+    }
+
+    return to_remove.size();
 }
 
 // Statistics

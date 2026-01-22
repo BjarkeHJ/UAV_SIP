@@ -143,7 +143,6 @@ void SurfelMapNode::pointcloud_callback(const sensor_msgs::msg::PointCloud2::Sha
 
     pcl::fromROSMsg(*msg, *cloud_in_);
     
-    const auto ts = std::chrono::high_resolution_clock::now();
 
     std::vector<PointWithNormal> pns;
     preproc_->set_transform(tf);
@@ -151,19 +150,13 @@ void SurfelMapNode::pointcloud_callback(const sensor_msgs::msg::PointCloud2::Sha
     preproc_->process();
     preproc_->get_points_with_normal(pns);    
 
+    
     // lock map with map mutex - unique_lock blocks other writers AND readers of the shared object
     std::unique_lock lock(surfel_map_->mutex_);
     size_t integrated = surfel_map_->integrate_points(pns, tf);
     lock.unlock();
 
-    const auto te = std::chrono::high_resolution_clock::now();
-    double telaps = std::chrono::duration<double, std::milli>(te - ts).count();
-    
-    (void)telaps;
-    (void)integrated;
-
-    // RCLCPP_INFO(this->get_logger(), "Total Time: %.3f ms", telaps);
-    // RCLCPP_INFO(this->get_logger(), "Integrated: %zu points", integrated);
+    RCLCPP_INFO(this->get_logger(), "Integrated %ld points in %.1f ms", integrated, surfel_map_->last_update_time_ms());
 }
 
 bool SurfelMapNode::get_transform(const rclcpp::Time& stamp, Eigen::Transform<float, 3, Eigen::Isometry>& tf) {
