@@ -244,8 +244,6 @@ void InspectionPlanner::order_viewpoints() {
 }
 
 void InspectionPlanner::two_opt_optimize() {
-
-
     return; // TODO
 }
 
