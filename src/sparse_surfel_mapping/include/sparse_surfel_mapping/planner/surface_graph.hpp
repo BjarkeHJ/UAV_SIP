@@ -33,6 +33,13 @@ struct SurfelNode {
 
 class SurfaceGraph {
 public:
+    // todo: wire into framework
+    struct Params {
+        // Edge weight
+        float normal_dot_th{0.0f};
+        float edge_weight_crease_penalty{0.0f};
+    };
+
     using NodeMap = std::unordered_map<VoxelKey, SurfelNode, VoxelKeyHash>;
 
     SurfaceGraph();

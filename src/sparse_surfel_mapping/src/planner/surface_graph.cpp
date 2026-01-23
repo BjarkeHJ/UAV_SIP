@@ -90,13 +90,18 @@ float SurfaceGraph::compute_edge_weight(const VoxelKey& from, const VoxelKey& to
 }
 
 float SurfaceGraph::compute_edge_weight(const SurfelNode& from, const SurfelNode& to) const {
+    
+    const float normal_dot_th = 0.5f;
+    const float edge_weight_crease_penalty = 2.0f;
+    
     float eucl_dist = (to.position - from.position).norm();
     float normal_dot = from.normal.dot(to.normal);
     float normal_factor = 1.0f;
 
+
     // penalize if sharp turn (>60 deg)
-    if (normal_dot < 0.5f) {
-        normal_factor = 2.0f / (1.0f + normal_dot); 
+    if (normal_dot < normal_dot_th) {
+        normal_factor = edge_weight_crease_penalty / (1.0f + normal_dot); 
     }
 
     return eucl_dist * normal_factor;

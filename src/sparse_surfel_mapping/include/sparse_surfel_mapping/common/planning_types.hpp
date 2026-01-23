@@ -94,15 +94,15 @@ enum class ViewpointStatus {
 
 struct ViewpointState {
     uint64_t id{0};
+    int pool_id{-1}; // frontier pool assignment
 
     Eigen::Vector3f position{Eigen::Vector3f::Zero()};
-    float yaw{0.0f}; // CCW
+    float yaw{0.0f};
 
     VoxelKeySet visible_voxels;
-    VoxelKeySet new_coverage_voxels;
 
     float coverage_score{0.0f};
-    float total_score{0.0f};
+    float total_score{0.0f}; // redundant
 
     ViewpointStatus status{ViewpointStatus::CANDIDATE};
     float path_cost{std::numeric_limits<float>::infinity()};

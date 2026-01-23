@@ -5,6 +5,12 @@
 #include <functional>
 #include "sparse_surfel_mapping/planner/surface_graph.hpp"
 
+/*
+This module updates the surface graph node information using the proposed geodesic field potential field 
+for increasing coverage attraction. 
+*/
+
+
 namespace sparse_surfel_map {
 
 struct DijkstraElement {
@@ -16,7 +22,7 @@ struct DijkstraElement {
     }
 };
 
-struct FrontierBasin {
+struct FrontierPool {
     int id{-1};
     std::vector<VoxelKey> frontier_surfels;
     VoxelKey peak_surfel;
@@ -33,7 +39,27 @@ struct FrontierBasin {
 };
 
 class GeodesicPotentialField {
-public: 
+public:
+    // TODO: wire params into framework and set good default
+    struct Params {
+        // Geodesic distances (bounds)
+        size_t source_horizon_hops{0};
+        float source_horizon_distance{0.0f};
+        float frontier_propagation_radius{0.0f};
+
+        // Field Potential weights
+        float alpha_source{0.0f};
+        float beta_frontier{0.0f};
+        float gamma_density{0.0f};
+        float lambda{0.0f};
+        float radius{0.0f};
+
+        // Frontier pools
+        size_t min_pool_size{0};
+        size_t max_n_pools{0};
+        size_t max_ascend_steps{0};
+    };
+
     GeodesicPotentialField();
 
     // Geodesic distances
@@ -44,29 +70,25 @@ public:
     void compute_potential_field(SurfaceGraph& graph, float voxel_size);
 
     // Frontier/Basin clustering
-    std::vector<FrontierBasin> detect_basins(SurfaceGraph& graph);
+    std::vector<FrontierPool> detect_frontier_pools(SurfaceGraph& graph);
 
     // statistics
     size_t nodes_visited_source() const { return nodes_visited_source_; } // nubmer of nodes visisted in dijkstra from source
     size_t nodes_visited_frontier() const { return nodes_visited_frontier_; } // number of nodes visited in dijkstra from frontiers
 
+    void set_params(const GeodesicPotentialField::Params& params) { params_ = params; }
+
 private:
     using PriorityQueue = std::priority_queue<DijkstraElement, std::vector<DijkstraElement>, std::greater<DijkstraElement>>; // min-heap (keep smallest element on top of queue)
 
-    // geodesic distances
-    void compute_approximate_density(SurfaceGraph& graph, float voxel_size);
-    void compute_gaussian_density(SurfaceGraph& graph);
-
     // basin extraction
-    std::vector<VoxelKey> find_local_maxima(const SurfaceGraph& graph); // find local maxima of potential on frontier surfels
-    std::vector<FrontierBasin> watershed_assign(SurfaceGraph& graph, const std::vector<VoxelKey>& seeds); // propagate basin labels from seeds (maximas)
-    void merge_similar_basins(SurfaceGraph& graph, std::vector<FrontierBasin>& basins);
-    void filter_small_basins(std::vector<FrontierBasin>& basins);
-    void reassign_ids(SurfaceGraph& graph, std::vector<FrontierBasin>& basins);
+    VoxelKey ascend_to_attractor(const SurfaceGraph& graph, const VoxelKey& start, size_t& steps) const;
 
     // stats from geodesic distance computations (delete?)
     size_t nodes_visited_source_{0};
     size_t nodes_visited_frontier_{0};
+
+    Params params_;
 };
 
 

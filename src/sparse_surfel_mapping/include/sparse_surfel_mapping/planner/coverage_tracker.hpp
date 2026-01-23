@@ -13,6 +13,10 @@ namespace sparse_surfel_map {
 
 class CoverageTracker {
 public:
+    struct Params {
+        // todo
+    };
+
     CoverageTracker();
     explicit CoverageTracker(const InspectionPlannerConfig& config);
 
