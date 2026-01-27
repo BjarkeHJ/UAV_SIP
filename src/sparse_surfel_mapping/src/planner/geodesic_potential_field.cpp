@@ -9,7 +9,7 @@ GeodesicPotentialField::GeodesicPotentialField() {}
 void GeodesicPotentialField::compute_distances_from_seed(SurfaceGraph& graph, const VoxelKey& seed) {
     
     const size_t max_horizon_hops = 100;
-    const float max_horizon_distance = 50.0f;
+    const float max_horizon_distance = 5.0f;
     
     nodes_visited_source_ = 0;
 
@@ -57,7 +57,7 @@ void GeodesicPotentialField::compute_distances_from_seed(SurfaceGraph& graph, co
 
 void GeodesicPotentialField::compute_distances_to_frontiers(SurfaceGraph& graph) {
     
-    const float frontier_propagation_radius = 10.0f; // param
+    const float frontier_propagation_radius = 5.0f; // param
     
     nodes_visited_frontier_ = 0;
     
@@ -107,6 +107,7 @@ void GeodesicPotentialField::compute_distances_to_frontiers(SurfaceGraph& graph)
         }
     }
 }
+
 
 // Compute potential field (assign potential to each graph node)
 void GeodesicPotentialField::compute_potential_field(SurfaceGraph& graph, float voxel_size) {
@@ -186,7 +187,7 @@ void GeodesicPotentialField::compute_potential_field(SurfaceGraph& graph, float 
 // Detect frontier pools/clusters and extract
 std::vector<FrontierPool> GeodesicPotentialField::detect_frontier_pools(SurfaceGraph& graph) {
 
-    const size_t min_pool_size = 3;
+    const size_t min_pool_size = 1;
     const size_t max_n_pools = 50;
 
     const VoxelKeySet& frontiers = graph.frontier_set();

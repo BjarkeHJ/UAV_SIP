@@ -21,12 +21,12 @@ public:
         float optimal_view_distance{2.0f};
         float min_view_distance{1.0f};
         float max_view_distance{3.0f};
-        float min_altitude{0.5f};
+        float min_altitude{0.2f};
 
         // Normal analysis
         float normal_variance_th{0.3f}; // below this -> region is planar
         size_t max_viewpoints_per_pool{3}; // for high-curvature region
-        size_t normal_cluster_k_means_iter{10};
+        size_t normal_cluster_k_means_iter{50};
 
         // Selection
         size_t max_viewpoints_total{25}; // max vp per planning cycle

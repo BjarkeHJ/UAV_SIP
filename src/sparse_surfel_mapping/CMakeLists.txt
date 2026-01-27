@@ -72,6 +72,10 @@ add_executable(
   src/planner/inspection_planner.cpp
   src/planner/rrt.cpp
 
+  src/planner/surface_graph.cpp
+  src/planner/geodesic_potential_field.cpp
+  src/planner/viewpoint_creator.cpp
+
   src/ros_nodes/surfel_map_node.cpp
   src/ros_nodes/planner_node.cpp
 

@@ -11,6 +11,10 @@
 #include "sparse_surfel_mapping/planner/coverage_tracker.hpp"
 #include "sparse_surfel_mapping/planner/rrt.hpp"
 
+#include "sparse_surfel_mapping/planner/surface_graph.hpp"
+#include "sparse_surfel_mapping/planner/viewpoint_creator.hpp"
+#include "sparse_surfel_mapping/planner/geodesic_potential_field.hpp"
+
 namespace sparse_surfel_map {
 
 class InspectionPlanner {
@@ -55,6 +59,8 @@ public:
 
     void request_replan() { needs_replan_ = true; }
     void reset();
+
+    std::vector<Viewpoint> get_cands() { return cands_; } // temp
     
 private:
     void order_viewpoints();
@@ -85,6 +91,11 @@ private:
     
     std::vector<ViewpointState> visited_viewpoints_; // tracking visited viewpoints
     mutable PlanningStatistics stats_;
+
+    SurfaceGraph graph_;
+    GeodesicPotentialField gpf_;
+    ViewpointCreator vpc_;
+    std::vector<Viewpoint> cands_;
 };
 
 } // namespace

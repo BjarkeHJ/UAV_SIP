@@ -20,7 +20,7 @@ struct CameraConfig {
     float vfov_deg{60.0f}; 
     float min_range{0.1f};
     float max_range{8.0f};
-    float max_incidence_angle_deg{75.0f};  
+    float max_incidence_angle_deg{45.0f};  
 };
 
 struct CollisionConfig {

@@ -6,6 +6,9 @@
 
 #include <nav_msgs/msg/path.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
+
+#include <geometry_msgs/msg/pose_array.hpp>
+
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
@@ -62,6 +65,8 @@ private:
     rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr path_pub_;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr fov_cloud_pub_;
     
+    rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr test_pub_;
+
     rclcpp::TimerBase::SharedPtr plan_timer_;
     rclcpp::TimerBase::SharedPtr fov_timer_;
     rclcpp::TimerBase::SharedPtr safety_timer_;

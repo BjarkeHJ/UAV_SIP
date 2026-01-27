@@ -29,6 +29,8 @@ void InspectionPlanner::initialize(SurfelMap* map) {
     rrt_planner_.set_map(map_);
     rrt_planner_.set_collision_radius(config_.collision.inflation_radius());
     planner_state_ = PlannerState::IDLE;
+
+    vpc_.set_map(map_);
 }
 
 void InspectionPlanner::update_pose(const Eigen::Vector3f& position, float yaw) {
@@ -171,6 +173,60 @@ bool InspectionPlanner::plan() {
     auto t_start = std::chrono::high_resolution_clock::now();
     planner_state_ = PlannerState::PLANNING;
     coverage_tracker_.update_statistics(map_->num_valid_surfels());
+    
+    //
+    Viewpoint vp_seed(current_position_, current_yaw_, config_.camera);
+    vp_seed.compute_visibility(*map_, true);
+    const VoxelKeySet& vp_vis = vp_seed.visible_voxels();
+    coverage_tracker_.mark_observed(vp_vis, 0);
+    coverage_tracker_.update_statistics(map_->num_valid_surfels());
+
+    const auto& covered_set = coverage_tracker_.observed_voxels();
+    std::cout << "COVERED SET SIZE: " << covered_set.size() << std::endl;
+
+
+    graph_.build_from_map(*map_);
+    graph_.classify_surfels(covered_set);
+
+    std::cout << "GRAPH SIZE: " << graph_.size() << std::endl;
+    std::cout << "FRONTIER SET SIZE: " << graph_.frontier_set().size() << std::endl;
+
+    VoxelKey nearest;
+    // if (covered_set.empty() || vp_vis.empty()) {
+    // nearest surfel to pos
+    float min_d = std::numeric_limits<float>::max();
+    for (const auto& [key, node] : graph_) {
+        float d2 = (node.position - current_position_).squaredNorm();
+        if (d2 < min_d) {
+            min_d = d2;
+            nearest = key;
+        }
+    }
+    // }
+
+    std::optional<std::reference_wrapper<const Voxel>> voxel_opt = map_->get_voxel(nearest);
+
+
+    auto tt = std::chrono::high_resolution_clock::now();
+
+    gpf_.compute_distances_from_seed(graph_, nearest);
+    gpf_.compute_distances_to_frontiers(graph_);
+    gpf_.compute_potential_field(graph_, map_->voxel_size());
+
+    auto ttt = std::chrono::high_resolution_clock::now();
+    std::cout << "Time: " << std::chrono::duration<double, std::milli>(ttt - tt).count() << " ms." << std::endl;
+
+
+    std::vector<FrontierPool> frontier_pools =  gpf_.detect_frontier_pools(graph_);
+    std::cout << "GPF FRONTIER POOLS SIZE: " << frontier_pools.size() << std::endl;
+
+    cands_ = vpc_.generate_viewpoints(graph_, frontier_pools, current_position_);
+    std::cout << "VPC CANDS SIZE: " << cands_.size() << std::endl;
+
+    //
+
+
+
 
     if (viewpoints_.size() >= config_.max_viewpoints_in_plan) return false; // plan saturated
 

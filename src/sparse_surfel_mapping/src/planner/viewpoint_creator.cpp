@@ -14,10 +14,11 @@ std::vector<Viewpoint> ViewpointCreator::generate_viewpoints(const SurfaceGraph&
     }
 
     std::cout << "[Viewpoint] All candidates: " << all_candidates.size() << " viewpoints" << std::endl;
+    return all_candidates;
 
     // Select best viewpoints among candidates
-    std::vector<Viewpoint> selected_viewpoints = select_best(all_candidates, pools, graph, current_position);
-    return selected_viewpoints;
+    // std::vector<Viewpoint> selected_viewpoints = select_best(all_candidates, pools, graph, current_position);
+    // return selected_viewpoints;
 }
 
 std::vector<Viewpoint> ViewpointCreator::generate_for_pool(const SurfaceGraph& graph, FrontierPool& pool) {
@@ -33,7 +34,7 @@ std::vector<Viewpoint> ViewpointCreator::generate_for_pool(const SurfaceGraph& g
     
     if (pool.normal_variance < params_.normal_variance_th) {
         Viewpoint vp = create_viewpoint(pool.centroid, pool.mean_normal, pool.normal_variance, pool.id);
-        
+
         if (is_valid(vp)) {
             vp.set_id(generate_id());
             vp.compute_visibility(*map_, true);
@@ -81,7 +82,7 @@ std::vector<Viewpoint> ViewpointCreator::generate_for_pool(const SurfaceGraph& g
             cluster_variance /= static_cast<float>(cluster.size());
 
             Viewpoint vp = create_viewpoint(cluster_centroid, cluster_normal, cluster_variance, pool.id);
-
+    
             if (is_valid(vp)) {
                 vp.set_id(generate_id());
                 vp.compute_visibility(*map_, true);
@@ -258,7 +259,8 @@ float ViewpointCreator::compute_priority(const Viewpoint& vp, const FrontierPool
     }
 
     size_t covered_visible = vp.visible_voxels().size() - frontiers_visible - unknown_visisble; // already marked visible
-    
+
+    // CONTIUNUE HERE 
 
 }
 

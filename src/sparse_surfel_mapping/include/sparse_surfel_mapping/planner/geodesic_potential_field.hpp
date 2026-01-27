@@ -43,21 +43,21 @@ public:
     // TODO: wire params into framework and set good default
     struct Params {
         // Geodesic distances (bounds)
-        size_t source_horizon_hops{0};
-        float source_horizon_distance{0.0f};
-        float frontier_propagation_radius{0.0f};
+        size_t source_horizon_hops{100};
+        float source_horizon_distance{10.0f};
+        float frontier_propagation_radius{10.0f};
 
         // Field Potential weights
-        float alpha_source{0.0f};
-        float beta_frontier{0.0f};
-        float gamma_density{0.0f};
-        float lambda{0.0f};
-        float radius{0.0f};
+        float alpha_source{1.0f};
+        float beta_frontier{1.0f};
+        float gamma_density{1.0f};
+        float lambda{5.0f};
+        float radius{25.0f};
 
         // Frontier pools
-        size_t min_pool_size{0};
-        size_t max_n_pools{0};
-        size_t max_ascend_steps{0};
+        size_t min_pool_size{1};
+        size_t max_n_pools{50};
+        size_t max_ascend_steps{100};
     };
 
     GeodesicPotentialField();
@@ -77,6 +77,8 @@ public:
     size_t nodes_visited_frontier() const { return nodes_visited_frontier_; } // number of nodes visited in dijkstra from frontiers
 
     void set_params(const GeodesicPotentialField::Params& params) { params_ = params; }
+
+    
 
 private:
     using PriorityQueue = std::priority_queue<DijkstraElement, std::vector<DijkstraElement>, std::greater<DijkstraElement>>; // min-heap (keep smallest element on top of queue)

@@ -23,6 +23,8 @@ InspectionPlannerNode::InspectionPlannerNode(const rclcpp::NodeOptions& options)
         std::bind(&InspectionPlannerNode::publish_fov_pointcloud, this)
     );
 
+    test_pub_ = this->create_publisher<geometry_msgs::msg::PoseArray>("inspection_planner/test_viewpoints", 10);
+
     // TIMERS
     if (safety_rate_ > 0.0) {
         safety_timer_ = this->create_wall_timer(
@@ -120,18 +122,6 @@ void InspectionPlannerNode::planner_timer_callback() {
     std::shared_lock lock(map_->mutex_);
     planner_->update_pose(current_position_, current_yaw_);
 
-    // bool planned = planner_->plan();
-    // lock.unlock();
-
-    // if (planned) {
-    //     if (should_send_new_path()) {
-    //         send_path_goal();
-    //     }
-    // }
-    // else if (planner_->has_plan() && !goal_in_progress_ && !waiting_for_goal_response_) {
-    //     send_path_goal();
-    // }
-
     // Check inspection completion
     if (planner_->is_complete()) {
         RCLCPP_INFO(this->get_logger(), "Inspection complete! Coverage: %.1f%%", 
@@ -148,6 +138,24 @@ void InspectionPlannerNode::planner_timer_callback() {
         if (should_send_new_path()) send_path_goal();
     }
     else lock.unlock();
+
+    // TEMP - TESTING NEW VIEWPOINTS
+    geometry_msgs::msg::PoseArray test_msg;
+    test_msg.header.frame_id = global_frame_;
+    test_msg.header.stamp = this->get_clock()->now();
+    std::vector<Viewpoint> test_cand = planner_->get_cands();
+    for (const auto& vp : test_cand) {
+        geometry_msgs::msg::Pose pose;
+        pose.position.x = vp.state().position.x();
+        pose.position.y = vp.state().position.y();
+        pose.position.z = vp.state().position.z();
+        tf2::Quaternion q;
+        q.setRPY(0, 0, vp.state().yaw);
+        pose.orientation = tf2::toMsg(q);
+        test_msg.poses.push_back(pose);
+    }
+    test_pub_->publish(test_msg);
+
 }
 
 void InspectionPlannerNode::safety_timer_callback() {
@@ -362,28 +370,6 @@ nav_msgs::msg::Path InspectionPlannerNode::convert_to_nav_path(const RRTPath& pl
     }
 
     // path_pub_->publish(nav_path);
-    return nav_path;
-
-    // auto internal_path = planner_->viewpoints(); // copy
-    // if (internal_path.size() < 1) return nav_path;
-
-    // auto it = internal_path.begin();
-    // while (it != internal_path.end()) {
-    //     const ViewpointState vpstate = it->state();
-    //     geometry_msgs::msg::PoseStamped pose;
-    //     pose.header = nav_path.header;
-    //     pose.pose.position.x = vpstate.position.x();
-    //     pose.pose.position.y = vpstate.position.y();
-    //     pose.pose.position.z = vpstate.position.z();
-
-    //     tf2::Quaternion q;
-    //     q.setRPY(0, 0, vpstate.yaw);
-    //     pose.pose.orientation = tf2::toMsg(q);
-
-    //     nav_path.poses.push_back(pose);
-    //     it++;
-    // }
-
     return nav_path;
 }
 

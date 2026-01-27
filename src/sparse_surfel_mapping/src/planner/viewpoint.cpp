@@ -211,6 +211,7 @@ size_t Viewpoint::compute_visibility(const SurfelMap& map, bool check_occlusion)
                 if (frustum_calc_.is_surfel_visible(frustum_, state_.position, surfel.mean(), surfel.normal())) {
                     
                     // Optional ray-cast occlusion check 
+                    check_occlusion = false;
                     if (check_occlusion) {
                         bool occluded = false;
 
@@ -232,8 +233,11 @@ size_t Viewpoint::compute_visibility(const SurfelMap& map, bool check_occlusion)
                             // hit valid surfel?
                             auto blocking_voxel = voxels.get(sample_key);
                             if (blocking_voxel && blocking_voxel->get().has_valid_surfel()) {
-                                occluded = true;
-                                break;
+                                const auto& block_surfel = blocking_voxel->get().surfel();
+                                if (frustum_calc_.is_surfel_visible(frustum_, state_.position, block_surfel.mean(), block_surfel.normal())) {
+                                    occluded = true;
+                                    break;
+                                }
                             }
                         }
 

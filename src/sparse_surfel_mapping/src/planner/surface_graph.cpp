@@ -40,7 +40,7 @@ void SurfaceGraph::classify_surfels(const VoxelKeySet& covered_set) {
             // frontier if: uncovered with covered neighbors
             bool has_covered_nb = false;
             for (const auto& nb_key : get_surface_neighbors(key)) {
-                if (covered_set.count(key) > 0) {
+                if (covered_set.count(nb_key) > 0) {
                     has_covered_nb = true;
                     break;
                 }
