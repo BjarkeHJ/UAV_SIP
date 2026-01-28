@@ -14,8 +14,6 @@ std::vector<FrontierSurfel> FrontierFinder::find_frontiers_from_coverage(const V
     const float max_radius_sq = max_expansion_radius * max_expansion_radius;
     VoxelKeySet checked; // tracked checked neighbors
 
-    // might be possible to extract ROI here with radius from expansion center to avoid iterating over all covered voxels/surfels
-
     // Iterate over all covered voxels 
     for (const auto& covered_key : cumulative_coverage) {
         // for (const auto& nb_key : get_neighbors_6(covered_key)) {

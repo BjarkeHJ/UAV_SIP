@@ -492,6 +492,7 @@ void InspectionPlannerNode::publish_surfel_coverage() {
     const auto& surfels = map_->get_valid_surfels();
 
     const VoxelKeySet& obs_set = planner_->coverage().observed_voxels();
+    const std::unordered_map<VoxelKey, size_t, VoxelKeyHash> obs_counts = planner_->coverage().observations_counts();
 
     auto viz_now = this->get_clock()->now();
 
@@ -512,6 +513,8 @@ void InspectionPlannerNode::publish_surfel_coverage() {
     surfel.action = visualization_msgs::msg::Marker::ADD;
 
     int marker_id = 0;
+    size_t max_obs = 0;
+
     for (const auto& sref : surfels) {
         const Surfel& s = sref.get();
         surfel.id = marker_id++;
@@ -548,12 +551,15 @@ void InspectionPlannerNode::publish_surfel_coverage() {
         surfel.scale.y = 2.0f * std::sqrt(std::max(evals(2), 1e-6f));
         surfel.scale.z = 0.005f;
 
-        // color (coverage state)
+        // color (coverage state)        
         const VoxelKey& skey = s.key();
         auto it = obs_set.find(skey);
+
         if (it != obs_set.end()) {
+            const size_t count = obs_counts.find(skey)->second;
+            if (count > max_obs) max_obs = count;
             surfel.color.r = 0.0f; 
-            surfel.color.g = 1.0f;
+            surfel.color.g = static_cast<float>(count) / static_cast<float>(max_obs);
             surfel.color.b = 0.0f;
             surfel.color.a = 0.8f;
         }

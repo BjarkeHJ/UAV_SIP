@@ -11,7 +11,6 @@ ViewpointGenerator::ViewpointGenerator()
     , map_(nullptr)
     , coverage_tracker_(nullptr)
     , frontier_finder_()
-    , rng_(std::random_device{}())
 {}
 
 ViewpointGenerator::ViewpointGenerator(const InspectionPlannerConfig& config)
@@ -19,7 +18,6 @@ ViewpointGenerator::ViewpointGenerator(const InspectionPlannerConfig& config)
     , map_(nullptr)
     , coverage_tracker_(nullptr)
     , frontier_finder_()
-    , rng_(std::random_device{}())
 {}
 
 void ViewpointGenerator::set_map(const SurfelMap* map) {

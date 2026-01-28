@@ -28,6 +28,7 @@ public:
     void reset();
 
     const VoxelKeySet& observed_voxels() const { return observed_voxels_; }
+    const std::unordered_map<VoxelKey, size_t, VoxelKeyHash>& observations_counts() const { return observation_counts_; }
     const std::vector<ViewpointState>& visited_viewpoints() const { return visited_viewpoints_; }
     
     size_t num_observed() const { return observed_voxels_.size(); }

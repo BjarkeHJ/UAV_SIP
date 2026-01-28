@@ -36,7 +36,7 @@ struct ViewpointConfig {
     float max_view_distance{3.0f};
 
     // Viewpoint generation
-    float max_expansion_radius{10.0f}; // how far away from the current viewpoint the frontier search can look (will pick closest valid frontier cluster)
+    float max_expansion_radius{50.0f}; // how far away from the current viewpoint the frontier search can look (will pick closest valid frontier cluster)
     
     // Frontier clustering
     float frontier_wavefront_width{2.0f};

@@ -211,6 +211,7 @@ size_t Viewpoint::compute_visibility(const SurfelMap& map, bool check_occlusion)
                 if (frustum_calc_.is_surfel_visible(frustum_, state_.position, surfel.mean(), surfel.normal())) {
                     
                     // Optional ray-cast occlusion check 
+                    check_occlusion = false; // temp
                     if (check_occlusion) {
                         bool occluded = false;
 

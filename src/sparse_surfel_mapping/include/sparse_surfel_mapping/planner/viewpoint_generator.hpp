@@ -1,7 +1,6 @@
 #ifndef VIEWPOINT_GENERATOR_HPP_
 #define VIEWPOINT_GENERATOR_HPP_
 
-#include <random>
 #include "sparse_surfel_mapping/common/planning_types.hpp"
 #include "sparse_surfel_mapping/mapper/surfel_map.hpp"
 #include "sparse_surfel_mapping/planner/viewpoint.hpp"
@@ -37,6 +36,8 @@ private:
     Viewpoint generate_viewpoint_for_cluster(const FrontierCluster& cluster, const VoxelKeySet& already_covered);
     Viewpoint* select_best_for_chain(std::vector<Viewpoint>& candidates, const VoxelKeySet& cumulative_coverage, const Eigen::Vector3f& previous_position, const std::vector<Viewpoint>& existing_chain);
     
+    
+
     bool is_viewpoint_valid(const Viewpoint& vp) const;
     void score_viewpoint(Viewpoint& vp, const VoxelKeySet& already_covered, const FrontierCluster& target_cluster);
     float compute_yaw_to_target(const Eigen::Vector3f& from_pos, const Eigen::Vector3f& target_pos) const;
@@ -49,7 +50,6 @@ private:
     FrontierFinder frontier_finder_;
 
     uint64_t next_viewpoint_id_{0};
-    std::mt19937 rng_;
 
     // debug statistics
     mutable size_t last_frontiers_found_;
