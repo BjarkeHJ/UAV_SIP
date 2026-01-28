@@ -56,8 +56,8 @@ struct ViewpointConfig {
 struct RRTConfig {
     size_t max_iterations{2000};
     float step_size{0.3f};
-    float goal_bias{0.1};
-    float sample_margin{10.0f}; // large corridor search (bounded search)
+    float goal_bias{0.3};
+    float sample_margin{25.0f}; // large corridor search (bounded search)
 };
 
 struct InspectionPlannerConfig {
@@ -67,7 +67,7 @@ struct InspectionPlannerConfig {
     RRTConfig rrt;
 
     // Planning strategy
-    size_t max_viewpoints_in_plan{2};
+    size_t max_viewpoints_in_plan{3};
 
     // Viewpoint Ordering
     size_t two_opt_iterations{100};

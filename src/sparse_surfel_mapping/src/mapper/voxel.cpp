@@ -18,6 +18,7 @@ void Voxel::integrate_points(const std::vector<PointWithNormal>& updates) {
 
 void Voxel::finalize_surfel() {
     surfel_.recompute_normal();
+    surfel_.set_key(key_);
 }
 
 void Voxel::reset() {

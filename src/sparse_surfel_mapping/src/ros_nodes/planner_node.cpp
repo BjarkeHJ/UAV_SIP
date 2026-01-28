@@ -22,6 +22,11 @@ InspectionPlannerNode::InspectionPlannerNode(const rclcpp::NodeOptions& options)
         std::chrono::duration<double>(1.0 / 5.0),
         std::bind(&InspectionPlannerNode::publish_fov_pointcloud, this)
     );
+    surfel_map_coverage_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("/surfel_map/coverage_map", 10);
+    marker_timer_ = this->create_wall_timer(
+        std::chrono::duration<double>(1.0 / 5.0),
+        std::bind(&InspectionPlannerNode::publish_surfel_coverage, this)
+    );
 
     // TIMERS
     if (safety_rate_ > 0.0) {
@@ -120,18 +125,6 @@ void InspectionPlannerNode::planner_timer_callback() {
     std::shared_lock lock(map_->mutex_);
     planner_->update_pose(current_position_, current_yaw_);
 
-    // bool planned = planner_->plan();
-    // lock.unlock();
-
-    // if (planned) {
-    //     if (should_send_new_path()) {
-    //         send_path_goal();
-    //     }
-    // }
-    // else if (planner_->has_plan() && !goal_in_progress_ && !waiting_for_goal_response_) {
-    //     send_path_goal();
-    // }
-
     // Check inspection completion
     if (planner_->is_complete()) {
         RCLCPP_INFO(this->get_logger(), "Inspection complete! Coverage: %.1f%%", 
@@ -144,10 +137,20 @@ void InspectionPlannerNode::planner_timer_callback() {
     // Plan
     if (planner_->plan()) {
         lock.unlock();
-        // send_path_goal();
-        if (should_send_new_path()) send_path_goal();
+
+        RCLCPP_INFO(this->get_logger(), "PLANNER: Planned path of %lu viewpoints...", planner_->viewpoints().size());
+
+        if (should_send_new_path()) {
+            send_path_goal();
+        }
     }
-    else lock.unlock();
+    else {
+        lock.unlock();
+        if (planner_->viewpoints().empty()) {
+            RCLCPP_WARN(this->get_logger(), "PLANNER: Failed to generate viewpoints...");
+            planner_->request_replan();
+        }
+    }
 }
 
 void InspectionPlannerNode::safety_timer_callback() {
@@ -168,7 +171,7 @@ void InspectionPlannerNode::safety_timer_callback() {
     if (!path_valid) {
         RCLCPP_WARN(this->get_logger(), "Path replan failed - cancelling execution");
         if (goal_in_progress_) {
-            // cancel_execution();
+            cancel_execution();
             planner_->request_replan();
         }
     }
@@ -193,6 +196,7 @@ void InspectionPlannerNode::send_path_goal() {
 
     // Get current path
     current_planned_path_ = planner_->generate_path(); // generate collision free path with rrt
+
     if (current_planned_path_.empty()) {
         RCLCPP_WARN(this->get_logger(), "Empty planned path, not sending goal...");
         return;
@@ -269,9 +273,10 @@ void InspectionPlannerNode::process_path_progress(uint32_t new_index) {
     // check all indices from last processed to new_index
     for (uint32_t idx = trajectory_active_index_; idx < new_index; ++idx) {
         int vp_idx = planner_->get_viewpoint_index_for_path_index(idx);
-        
+
         // this was an actual viewpoint (not rrt waypoint) -> mark as visited in coverage tracker
         if (vp_idx >= 0 && vp_idx > last_completed_viewpoint_idx_) {
+
             std::shared_lock lock(map_->mutex_);
             planner_->mark_target_reached();
             lock.unlock();
@@ -289,7 +294,11 @@ void InspectionPlannerNode::result_callback(const GoalHandleExecutePath::Wrapped
 
     switch (result.code) {
         case rclcpp_action::ResultCode::SUCCEEDED:
+            RCLCPP_INFO(this->get_logger(), "Viewpoint reached - Current coverage: %.1f%%", planner_->coverage().coverage_ratio() * 100.0f);
             RCLCPP_INFO(this->get_logger(), "Trajectory completed succesfully: %s", result.result->message.c_str());
+            
+            std::cout << "DEBUG1: viewpoints_ size after reached end of traj" << planner_->viewpoints().size() << std::endl;
+
             if (planner_->has_plan()) {
                 int final_vp_idx = planner_->get_viewpoint_index_for_path_index(current_planned_path_.size() - 1);
                 if (final_vp_idx >= 0 && final_vp_idx > last_completed_viewpoint_idx_) {
@@ -298,6 +307,10 @@ void InspectionPlannerNode::result_callback(const GoalHandleExecutePath::Wrapped
                     lock.unlock();
                 }
             }
+            
+            std::cout << "DEBUG2: viewpoints_ size after reached end of traj" << planner_->viewpoints().size() << std::endl;
+            planner_->request_replan();
+
             break;
 
         case rclcpp_action::ResultCode::ABORTED:
@@ -313,9 +326,6 @@ void InspectionPlannerNode::result_callback(const GoalHandleExecutePath::Wrapped
             break;
     }
 
-    if (planner_->has_plan() && is_active_ && !emergency_stop_active_) {
-        // RCLCPP_INFO(this->get_logger(), "Trajectory complete, checking for more waypoints...");
-    }
 }
 
 bool InspectionPlannerNode::get_current_pose(Eigen::Vector3f& position, float& yaw) {
@@ -360,29 +370,6 @@ nav_msgs::msg::Path InspectionPlannerNode::convert_to_nav_path(const RRTPath& pl
         
         nav_path.poses.push_back(pose);
     }
-
-    // path_pub_->publish(nav_path);
-    return nav_path;
-
-    // auto internal_path = planner_->viewpoints(); // copy
-    // if (internal_path.size() < 1) return nav_path;
-
-    // auto it = internal_path.begin();
-    // while (it != internal_path.end()) {
-    //     const ViewpointState vpstate = it->state();
-    //     geometry_msgs::msg::PoseStamped pose;
-    //     pose.header = nav_path.header;
-    //     pose.pose.position.x = vpstate.position.x();
-    //     pose.pose.position.y = vpstate.position.y();
-    //     pose.pose.position.z = vpstate.position.z();
-
-    //     tf2::Quaternion q;
-    //     q.setRPY(0, 0, vpstate.yaw);
-    //     pose.pose.orientation = tf2::toMsg(q);
-
-    //     nav_path.poses.push_back(pose);
-    //     it++;
-    // }
 
     return nav_path;
 }
@@ -498,5 +485,90 @@ void InspectionPlannerNode::publish_fov_pointcloud() {
     fov_cloud_pub_->publish(cloud_msg);
 }
 
+void InspectionPlannerNode::publish_surfel_coverage() {
+    if (!map_) return;
+    visualization_msgs::msg::MarkerArray marker_array;
+
+    const auto& surfels = map_->get_valid_surfels();
+
+    const VoxelKeySet& obs_set = planner_->coverage().observed_voxels();
+
+    auto viz_now = this->get_clock()->now();
+
+    // delete previous
+    visualization_msgs::msg::Marker delete_marker;
+    delete_marker.header.frame_id = global_frame_;
+    delete_marker.header.stamp = viz_now;
+    delete_marker.action = visualization_msgs::msg::Marker::DELETEALL;
+    delete_marker.ns = "surfel_coverage_state";
+    marker_array.markers.push_back(delete_marker);
+
+    // ellipses
+    visualization_msgs::msg::Marker surfel;
+    surfel.header.frame_id = global_frame_;
+    surfel.header.stamp = viz_now;
+    surfel.ns = "surfel_coverage_state";
+    surfel.type = visualization_msgs::msg::Marker::CYLINDER;
+    surfel.action = visualization_msgs::msg::Marker::ADD;
+
+    int marker_id = 0;
+    for (const auto& sref : surfels) {
+        const Surfel& s = sref.get();
+        surfel.id = marker_id++;
+
+        // pos
+        const Eigen::Vector3f& m = s.mean();
+        surfel.pose.position.x = m.x();
+        surfel.pose.position.y = m.y();
+        surfel.pose.position.z = m.z();
+
+        // ori
+        const Eigen::Matrix3f& C = s.eigenvectors();
+        const Eigen::Vector3f& ev1 = C.col(1);
+        const Eigen::Vector3f& ev2 = C.col(2);
+        Eigen::Matrix3f R;
+        R.col(0) = ev1;
+        R.col(1) = ev2;
+        R.col(2) = s.normal();
+        if (R.determinant() < 0) {
+            R.col(1) = -R.col(1);
+        }
+
+        Eigen::Quaternionf q(R);
+        q.normalize();
+
+        surfel.pose.orientation.x = q.x();
+        surfel.pose.orientation.y = q.y();
+        surfel.pose.orientation.z = q.z();
+        surfel.pose.orientation.w = q.w();
+
+        // scale
+        const Eigen::Vector3f& evals = s.eigenvalues();
+        surfel.scale.x = 2.0f * std::sqrt(std::max(evals(1), 1e-6f));
+        surfel.scale.y = 2.0f * std::sqrt(std::max(evals(2), 1e-6f));
+        surfel.scale.z = 0.005f;
+
+        // color (coverage state)
+        const VoxelKey& skey = s.key();
+        auto it = obs_set.find(skey);
+        if (it != obs_set.end()) {
+            surfel.color.r = 0.0f; 
+            surfel.color.g = 1.0f;
+            surfel.color.b = 0.0f;
+            surfel.color.a = 0.8f;
+        }
+        else {
+            surfel.color.r = 0.0f; 
+            surfel.color.g = 0.0f;
+            surfel.color.b = 0.0f;
+            surfel.color.a = 0.4f;
+        }
+
+        marker_array.markers.push_back(surfel);
+    }
+
+    surfel_map_coverage_pub_->publish(marker_array);
+
+}
 
 } // namespace

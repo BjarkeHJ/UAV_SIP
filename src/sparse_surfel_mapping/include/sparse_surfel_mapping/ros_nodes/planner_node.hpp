@@ -12,6 +12,8 @@
 #include <tf2_eigen/tf2_eigen.hpp>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
+#include <visualization_msgs/msg/marker_array.hpp>
+
 #include "sparse_surfel_mapping/mapper/surfel_map.hpp"
 #include "sparse_surfel_mapping/planner/inspection_planner.hpp"
 
@@ -47,6 +49,7 @@ private:
     
     void publish_emergency_stop();
     void publish_fov_pointcloud();
+    void publish_surfel_coverage();
 
     void process_path_progress(uint32_t new_index);
 
@@ -61,10 +64,12 @@ private:
 
     rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr path_pub_;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr fov_cloud_pub_;
-    
+    rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr surfel_map_coverage_pub_;
+
     rclcpp::TimerBase::SharedPtr plan_timer_;
-    rclcpp::TimerBase::SharedPtr fov_timer_;
     rclcpp::TimerBase::SharedPtr safety_timer_;
+    rclcpp::TimerBase::SharedPtr fov_timer_;
+    rclcpp::TimerBase::SharedPtr marker_timer_;
 
     std::string global_frame_;
     std::string drone_frame_;

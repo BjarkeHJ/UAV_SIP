@@ -94,9 +94,16 @@ void TrajectoryNode::update_reference(float dt) {
     }
 
     const size_t N = active_path_.poses.size();
+    active_index_ = std::min(active_index_, N - 1);
+
+    std::cout << "Number of path waypoints: " << N << std::endl;
+    std::cout << "Active index: " << active_index_ << std::endl;
+
     if (N == 1) {
         // Only one waypoint: just go/hold there
         const auto &p0 = active_path_.poses[0].pose.position;
+        const float goal_yaw = -quat_to_yaw(active_path_.poses[0].pose.orientation);
+
         Eigen::Vector3f goal_p(p0.x, p0.y, p0.z);
 
         Eigen::Vector3f err = goal_p - pos_ref_; // Vector from reference to next wp
@@ -115,16 +122,15 @@ void TrajectoryNode::update_reference(float dt) {
             if (dv_norm > dv_max && dv_norm > 1e-6f) dv *= (dv_max / dv_norm);
             vel_ref_ += dv;
             pos_ref_ += vel_ref_ * dt;
+
+            yaw_ref_ = yaw_step_towards(goal_yaw, err.norm(), dt);
         }
         return;
     }
 
-    // active_index_ means: "last reached waypoint index" (0..N-1)
-    active_index_ = std::min(active_index_, N - 1);
-
     // Advance index while we're within tolerance of the NEXT waypoint
     while ((active_index_ + 1) < N) {
-        const auto &next = active_path_.poses[active_index_ + 1].pose.position;
+        const auto &next = active_path_.poses[active_index_].pose.position;
         Eigen::Vector3f next_p(next.x, next.y, next.z);
         if ((next_p - pos_ref_).norm() < pos_tol_) {
             active_index_++;
@@ -132,34 +138,8 @@ void TrajectoryNode::update_reference(float dt) {
             break;
         }
     }
-
-    // If we've reached the last waypoint, brake to stop and hold it
-    if (active_index_ >= (N - 1)) {
-        const auto &last = active_path_.poses[N - 1].pose.position;
-        Eigen::Vector3f last_p(last.x, last.y, last.z);
-
-        // Hold position at the last waypoint (optional snap when close)
-        Eigen::Vector3f err = last_p - pos_ref_;
-        if (err.norm() < pos_tol_) {
-            pos_ref_ = last_p;
-        }
-
-        // Brake to zero velocity smoothly
-        Eigen::Vector3f dv = -vel_ref_;
-        float dv_norm = dv.norm();
-        float dv_max = acc_max_ * dt;
-        if (dv_norm > dv_max && dv_norm > 1e-6f) dv *= (dv_max / dv_norm);
-        vel_ref_ += dv;
-        pos_ref_ += vel_ref_ * dt;
-
-        // Yaw: converge to final waypoint yaw (rate-limited)
-        float yaw_goal = -quat_to_yaw(active_path_.poses[N - 1].pose.orientation);
-        float dist_last = (last_p - pos_ref_).norm();
-        yaw_ref_ = yaw_step_towards(yaw_goal, dist_last, dt);
-        return;
-    }
     
-    const auto& tgt_pose = active_path_.poses[active_index_ + 1].pose;
+    const auto& tgt_pose = active_path_.poses[active_index_].pose;
     Eigen::Vector3f target(tgt_pose.position.x, tgt_pose.position.y, tgt_pose.position.z);
     float dist_to_target = (target - pos_ref_).norm();
     float current_speed = vel_ref_.norm();
@@ -187,8 +167,20 @@ void TrajectoryNode::update_reference(float dt) {
     pos_ref_ += vel_ref_ * dt;
 
     // Yaw: ALWAYS follow waypoint yaw (shortest-angle), distance-weighted turning
+    // float yaw_goal = -quat_to_yaw(tgt_pose.orientation);
+    // yaw_ref_ = yaw_step_towards(yaw_goal, dist_to_target, dt);
+
     float yaw_goal = -quat_to_yaw(tgt_pose.orientation);
-    yaw_ref_ = yaw_step_towards(yaw_goal, dist_to_target, dt);
+
+    // If this is the LAST waypoint → ignore distance scaling
+    if (active_index_ == N - 1) {
+        float dy = wrap_pi(yaw_goal - yaw_ref_);
+        float max_dy = yaw_rate_max_ * dt;
+        dy = std::clamp(dy, -max_dy, +max_dy);
+        yaw_ref_ = wrap_pi(yaw_ref_ + dy);
+    } else {
+        yaw_ref_ = yaw_step_towards(yaw_goal, dist_to_target, dt);
+    }
 }
 
 rclcpp_action::GoalResponse TrajectoryNode::handle_goal(const rclcpp_action::GoalUUID&, std::shared_ptr<const ExecutePath::Goal> goal) {
@@ -250,12 +242,12 @@ float TrajectoryNode::yaw_step_towards(float yaw_goal, float dist_to_wp, float d
 float TrajectoryNode::compute_remaining_distance() {
     // You would compute from current_ref_ along remaining waypoints or along spline length.
     // Simple placeholder:
-    return static_cast<float>(active_path_.poses.size() - 1 - active_index_);
+    return static_cast<float>(active_path_.poses.size() - active_index_);
 }
 
 float TrajectoryNode::compute_progress() {
     if (active_path_.poses.size() <= 1) return 1.0f;
-    return static_cast<float>(active_index_) / static_cast<float>(active_path_.poses.size() - 1);
+    return static_cast<float>(active_index_) / static_cast<float>(active_path_.poses.size());
 }
 
 geometry_msgs::msg::Quaternion TrajectoryNode::yaw_to_quat(float yaw) {
@@ -296,7 +288,7 @@ void TrajectoryNode::publish_path_vis() {
     nav_msgs::msg::Path rem;
     rem.header.frame_id = active_path_.header.frame_id;
     rem.header.stamp = this->get_clock()->now();
-    for (size_t i=active_index_+1; i<active_path_.poses.size(); ++i) {
+    for (size_t i=active_index_; i<active_path_.poses.size(); ++i) {
         rem.poses.push_back(active_path_.poses[i]);
     }
     vis_path_pub_->publish(rem);

@@ -177,7 +177,7 @@ bool InspectionPlanner::plan() {
     // Compute the current planned viewpoint (except front) visibility (only what viewpoint in plan sees)
     // Because front is used for seeding and expansion center computation
     VoxelKeySet plan_observed;
-    size_t desired_new = config_.max_viewpoints_in_plan - viewpoints_.size() + 1;
+    size_t desired_new = config_.max_viewpoints_in_plan - viewpoints_.size();
     if (!viewpoints_.empty()) {
         for (size_t i = 1; i < viewpoints_.size(); ++i) {
             Viewpoint& vp = viewpoints_[i];
@@ -220,7 +220,7 @@ bool InspectionPlanner::plan() {
 
     order_viewpoints();
     path_cache_valid_ = false;
-
+    
     auto t_end = std::chrono::high_resolution_clock::now();
     stats_.total_planning_time_ms += std::chrono::duration<double, std::milli>(t_end - t_start).count();;
 
@@ -272,27 +272,36 @@ RRTPath InspectionPlanner::generate_path() {
 
         if (rrt_path.empty()) {
             if (config_.debug_output) {
-                std::cout << "[InspectionPlanner] Warning: RRT failed!" << std::endl;
+                std::cout << "[InspectionPlanner] Warning: RRT failed! Deleting viewpoints and retrying..." << std::endl;
             }
 
             if (vp_idx + 1 < viewpoints_.size()) {
                 viewpoints_.erase(viewpoints_.begin() + vp_idx + 1); // remove this viewpoint (and continue)
+                std::cout << "[InspectionPlanner] Path now size: " << viewpoints_.size() << std::endl;
                 // viewpoints_.erase(viewpoints_.begin() + vp_idx + 1, viewpoints_.end()); // remove all following viewpoints (and break)
+                continue;
             }
-            continue;
-            // break; // rest of path needs to be replanned first
+            else {
+                viewpoints_.clear();
+                std::cout << "[InspectionPlanner] Path cleared!" << std::endl;
+                needs_replan_ = true;              
+                break;
+            }
         }
 
-        // add rrt intermediate waypoints (skip first if not actually first - to aviud dupes)
-        size_t start_idx = (vp_idx == 0) ? 0 : 1;
-        for (size_t i = start_idx; i < rrt_path.size() - 1; ++i) {
-            path.positions.push_back(rrt_path[i]);
+        // add rrt intermediate waypoints (skip first if not actually first - to avoid dupes)
+        if (rrt_path.size() > 2) {
+            size_t start_idx = (vp_idx == 0) ? 0 : 1;
+            for (size_t i = start_idx; i < rrt_path.size() - 1; ++i) {
+                path.positions.push_back(rrt_path[i]);
+                Eigen::Vector3f to_next = rrt_path[i + 1] - rrt_path[i];
+                float waypoint_yaw = std::atan2(to_next.y(), to_next.x());
+                path.yaws.push_back(waypoint_yaw);
 
-            Eigen::Vector3f to_next = rrt_path[i + 1] - rrt_path[i];
-            float waypoint_yaw = std::atan2(to_next.y(), to_next.x());
-            path.yaws.push_back(waypoint_yaw);
+                path.viewpoint_indices.push_back(-1); // not actual viewpoint
+            }
 
-            path.viewpoint_indices.push_back(-1); // not actual viewpoint
+            std::cout << "[RRT] Local planning refined path" << std::endl;
         }
 
         path.positions.push_back(vp.position());
@@ -393,5 +402,10 @@ void InspectionPlanner::reset() {
     }
 }
 
+void InspectionPlanner::request_replan() {
+    std::cout << "[InspectionPlanner] Requested Replan... Clearing viewpoints and replanning." << std::endl;
+    viewpoints_.clear();
+    needs_replan_ = true;
+}
 
 } // namespace

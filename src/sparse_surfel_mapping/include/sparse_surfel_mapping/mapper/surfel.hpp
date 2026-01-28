@@ -39,9 +39,12 @@ public:
     size_t point_count() const { return count_; }
     float sum_weights() const { return sum_weights_; }
 
+    const VoxelKey& key() const { return key_; }
+    void set_key(const VoxelKey& key) { key_ = key; }
+
     void set_config(const SurfelConfig& config) { config_ = config; }
     const SurfelConfig& get_config() const { return config_; }
-
+    
 
 private:
     void compute_eigen_decomp();
@@ -65,6 +68,7 @@ private:
     // State flags
     bool is_valid_{false};
     bool eigen_dirty_{true};
+    VoxelKey key_;
 
     // Surfel Configuration
     SurfelConfig config_;

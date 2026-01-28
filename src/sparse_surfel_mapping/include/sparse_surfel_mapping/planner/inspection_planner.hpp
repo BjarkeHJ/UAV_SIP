@@ -53,7 +53,7 @@ public:
     const PlanningStatistics& statistics() const { return stats_; }
     const CoverageTracker& coverage() const { return coverage_tracker_; }
 
-    void request_replan() { needs_replan_ = true; }
+    void request_replan();
     void reset();
     
 private:

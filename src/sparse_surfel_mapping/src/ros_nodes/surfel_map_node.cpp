@@ -156,7 +156,7 @@ void SurfelMapNode::pointcloud_callback(const sensor_msgs::msg::PointCloud2::Sha
     size_t integrated = surfel_map_->integrate_points(pns, tf);
     lock.unlock();
 
-    RCLCPP_INFO(this->get_logger(), "Integrated %ld points in %.1f ms", integrated, surfel_map_->last_update_time_ms());
+    // RCLCPP_INFO(this->get_logger(), "Integrated %ld points in %.1f ms", integrated, surfel_map_->last_update_time_ms());
 }
 
 bool SurfelMapNode::get_transform(const rclcpp::Time& stamp, Eigen::Transform<float, 3, Eigen::Isometry>& tf) {
@@ -174,7 +174,7 @@ bool SurfelMapNode::get_transform(const rclcpp::Time& stamp, Eigen::Transform<fl
 void SurfelMapNode::publish_visualization() {
     visualization_msgs::msg::MarkerArray marker_array;
 
-    const auto surfels = surfel_map_->get_valid_surfels();
+    const auto& surfels = surfel_map_->get_valid_surfels();
     if (surfels.empty()) return;
 
     auto viz_now = this->get_clock()->now();

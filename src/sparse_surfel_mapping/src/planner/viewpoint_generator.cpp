@@ -300,7 +300,8 @@ bool ViewpointGenerator::is_viewpoint_valid(const Viewpoint& vp) const {
     // Minimum altitude
     if (vp.state().position.z() < 0.5f) return false;
     // Collision in min_view_distance radius?
-    if (vp.is_in_collision(*map_, vp_config.min_view_distance)) return false;
+    // if (vp.is_in_collision(*map_, vp_config.min_view_distance)) return false;
+    if (vp.is_in_collision(*map_, config_.collision.inflation_radius())) return false;
     // Similar to already visited viewpoint?
     if (coverage_tracker_->is_viewpoint_visited(vp)) return false;
     return true;
