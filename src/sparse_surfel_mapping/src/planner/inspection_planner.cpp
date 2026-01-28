@@ -81,61 +81,59 @@ bool InspectionPlanner::validate_viewpoints() {
 bool InspectionPlanner::validate_path() {
     if (!map_ || !path_cache_valid_ || cached_path_.empty()) return true;
 
-    int invalid_index = rrt_planner_.validate_path(cached_path_.positions);
+    // check straight-line edge connections in path
+    int invalid_index = rrt_planner_.validate_path(cached_path_.positions); // return "from"-viewpoint index in path of (first) edge with collision (-1 if all edges valid)
     if (invalid_index < 0) return true; // path is valid
 
+    // attempt repairing local replanning
     if (config_.debug_output) {
         std::cout << "[InspectionPlanner] Path collision - Local Replanning..." << std::endl;
     }
 
-    int next_vp_path_idx = -1;
-    int next_vp_idx = -1;
+    // identify the next actual viewpoint in the path
+    int next_vp_path_idx = -1; // index of path
+    int next_vp_idx = -1; // index of planned viewpoints
     for (size_t i = invalid_index + 1; i < cached_path_.viewpoint_indices.size(); ++i) {
-        // is actual viewpoint?
         if (cached_path_.viewpoint_indices[i] >= 0) {
+            // is actual viewpoint
             next_vp_path_idx = static_cast<int>(i);
             next_vp_idx = cached_path_.viewpoint_indices[i];
             break;
         }
     }
 
+    // no viewpoint after collision - full replan
     if (next_vp_path_idx < 0 || next_vp_idx < 0) {
-        // no viewpoint after collision - full replan
         path_cache_valid_ = false;
-        needs_replan_ = true;
         return false;
     }
 
+    // run rrt between viewpoints with edge collision
     const Eigen::Vector3f replan_start = cached_path_.positions[invalid_index];
     const Eigen::Vector3f replan_goal = cached_path_.positions[next_vp_path_idx];
     
     auto new_segment = rrt_planner_.plan(replan_start, replan_goal);
     if (new_segment.empty()) {
-        // local replan failed
-
-        // erase unreachable viewpoint
+        // local replan failed - erase unreachable viewpoint
         if (next_vp_idx >= 0 && static_cast<size_t>(next_vp_idx) < viewpoints_.size()) {
             viewpoints_.erase(viewpoints_.begin() + next_vp_idx);
         }
 
-        path_cache_valid_ = false;
-    
-        // if no more viewpoints - full replan
-        if (viewpoints_.empty()) {
-            needs_replan_ = true;
-        }
-
+        path_cache_valid_ = false; 
         return false;
     }
 
+    // New path generated between viewpoints with edge collision - assemble repaired path
     RRTPath repaired_path;
+
+    // restore path up until collision
     for (int i = 0; i <= invalid_index; ++i) {
         repaired_path.positions.push_back(cached_path_.positions[i]);
         repaired_path.yaws.push_back(cached_path_.yaws[i]);
         repaired_path.viewpoint_indices.push_back(cached_path_.viewpoint_indices[i]);
     }
 
-    // add new rrt segment (skip first)
+    // add new rrt segment (skip first - contained in cached)
     for (size_t i = 1; i < new_segment.size() ; ++i) {
         repaired_path.positions.push_back(new_segment[i]);
         Eigen::Vector3f to_next = new_segment[i + 1] - new_segment[i];
@@ -143,17 +141,18 @@ bool InspectionPlanner::validate_path() {
         repaired_path.viewpoint_indices.push_back(-1);
     }
 
+    // final validation repaired segment
+    int final_check = rrt_planner_.validate_path(repaired_path.positions);
+    if (final_check >= 0) {
+        path_cache_valid_ = false;
+        return false;
+    }
+
+    // add the path elements after collision - might be fine (will be found next check if not)
     for (size_t i = next_vp_path_idx + 1; i < cached_path_.positions.size(); ++i) {
         repaired_path.positions.push_back(cached_path_.positions[i]);
         repaired_path.yaws.push_back(cached_path_.yaws[i]);
         repaired_path.viewpoint_indices.push_back(cached_path_.viewpoint_indices[i]);
-    }
-
-    int final_check = rrt_planner_.validate_path(repaired_path.positions);
-    if (final_check >= 0) {
-        path_cache_valid_ = false;
-        needs_replan_ = true;
-        return false;
     }
 
     cached_path_ = std::move(repaired_path);
@@ -191,17 +190,13 @@ bool InspectionPlanner::plan() {
     std::vector<Viewpoint> new_vpts;
     // If the planner needs full replan: Scrap old and replan from current drone pose
     if (needs_replan_) {
-        viewpoints_.clear();
         Viewpoint seed_vp(current_position_, current_yaw_, config_.camera);
-        // if (coverage_tracker_.num_observed() > 0) {
-        //     // try to detect frontier 
-            
-        // }
         seed_vp.compute_visibility(*map_, true);
         new_vpts = viewpoint_generator_.generate_viewpoints(seed_vp, desired_new, plan_observed);
-        if (!new_vpts.empty()) needs_replan_ = false;
+        if (!new_vpts.empty()) {
+            needs_replan_ = false;
+        }
     }
-
     // Space in current plan? Bound the number of viewpoints to optimize
     else if (viewpoints_.size() < config_.max_viewpoints_in_plan) {
         Viewpoint& seed_vp = viewpoints_.back(); // generate from last in queue 
@@ -278,13 +273,10 @@ RRTPath InspectionPlanner::generate_path() {
             if (vp_idx + 1 < viewpoints_.size()) {
                 viewpoints_.erase(viewpoints_.begin() + vp_idx + 1); // remove this viewpoint (and continue)
                 std::cout << "[InspectionPlanner] Path now size: " << viewpoints_.size() << std::endl;
-                // viewpoints_.erase(viewpoints_.begin() + vp_idx + 1, viewpoints_.end()); // remove all following viewpoints (and break)
                 continue;
             }
             else {
-                viewpoints_.clear();
-                std::cout << "[InspectionPlanner] Path cleared!" << std::endl;
-                needs_replan_ = true;              
+                request_replan();
                 break;
             }
         }
@@ -313,7 +305,6 @@ RRTPath InspectionPlanner::generate_path() {
 
     cached_path_ = path;
     path_cache_valid_ = true;
-    path_was_repaired_ = false; // fresh path...
 
     return cached_path_;
 }
@@ -357,7 +348,7 @@ void InspectionPlanner::mark_target_reached() {
     path_cache_valid_ = false;
 
     if (viewpoints_.empty()) {
-        needs_replan_ = true;
+        request_replan();
     }
 
     if (is_complete()) {
@@ -395,7 +386,6 @@ void InspectionPlanner::reset() {
     needs_replan_ = true;
     cached_path_ = RRTPath();
     path_cache_valid_ = false;
-    path_was_repaired_ = false;
     
     if (config_.debug_output) {
         std::cout << "[InspectionPlanner] Reset complete" << std::endl;
@@ -405,6 +395,7 @@ void InspectionPlanner::reset() {
 void InspectionPlanner::request_replan() {
     std::cout << "[InspectionPlanner] Requested Replan... Clearing viewpoints and replanning." << std::endl;
     viewpoints_.clear();
+    path_cache_valid_ = false;
     needs_replan_ = true;
 }
 

@@ -33,10 +33,7 @@ public:
     
     bool plan();
     bool validate_viewpoints();
-    
     bool validate_path();
-    bool was_path_repaired() const { return path_was_repaired_; }
-    void clear_repair_flag() { path_was_repaired_ = false; }
 
     void mark_target_reached(); // mark front viewpoint visited
     bool is_complete();
@@ -81,7 +78,6 @@ private:
     // cached executable path
     mutable RRTPath cached_path_;
     mutable bool path_cache_valid_{false};
-    mutable bool path_was_repaired_{false};
     
     std::vector<ViewpointState> visited_viewpoints_; // tracking visited viewpoints
     mutable PlanningStatistics stats_;

@@ -49,7 +49,6 @@ public:
 private:
     void compute_eigen_decomp();
     void update_validity();
-    void orient_normal();
     
     // Surfel statistics
     Eigen::Vector3f mean_{Eigen::Vector3f::Zero()};

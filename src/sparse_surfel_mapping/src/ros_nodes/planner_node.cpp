@@ -155,31 +155,32 @@ void InspectionPlannerNode::planner_timer_callback() {
 
 void InspectionPlannerNode::safety_timer_callback() {
     if (!is_active_ || !map_ || !planner_) return;
-    if (emergency_stop_active_) return;
+    if (!planner_->has_plan()) return; // nothing to safety check
 
     if (!get_current_pose(current_position_, current_yaw_)) return;
     planner_->update_pose(current_position_, current_yaw_);
 
     std::shared_lock lock(map_->mutex_);
-    planner_->validate_viewpoints();
 
+    // Check viewpoints
+    bool viewpoints_left = planner_->validate_viewpoints();
+    if (!viewpoints_left) {
+        RCLCPP_WARN(this->get_logger(), "[ViewpointValidaton] All viewpoint invalid! Replan");
+        planner_->request_replan();
+        return;
+    }
+
+    // Check path 
     bool path_valid = planner_->validate_path();
-    bool was_repaired = planner_->was_path_repaired();
-    planner_->clear_repair_flag();
     lock.unlock();
 
+    // If attempted repair on broken path failed -> cancel current execution and replan
     if (!path_valid) {
         RCLCPP_WARN(this->get_logger(), "Path replan failed - cancelling execution");
         if (goal_in_progress_) {
             cancel_execution();
             planner_->request_replan();
         }
-    }
-    else if (was_repaired && goal_in_progress_) {
-        RCLCPP_INFO(this->get_logger(), "Path repaired - sending updated trajectory");
-        // cancel_execution();
-        // planner_->request_replan();
-        send_path_goal();
     }
 }
 
@@ -194,9 +195,8 @@ void InspectionPlannerNode::send_path_goal() {
         return;
     }
 
-    // Get current path
-    current_planned_path_ = planner_->generate_path(); // generate collision free path with rrt
-
+    // From the currently proposed viewpoints - generate/ensure a collision-free path (RRT)
+    current_planned_path_ = planner_->generate_path();
     if (current_planned_path_.empty()) {
         RCLCPP_WARN(this->get_logger(), "Empty planned path, not sending goal...");
         return;

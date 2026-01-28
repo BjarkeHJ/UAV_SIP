@@ -137,6 +137,10 @@ void Surfel::update_validity() {
             return;
         }
     }
+
+    if (is_degenerate()) {
+        is_valid_ = false;
+    }
     
     is_valid_ = true;
 }

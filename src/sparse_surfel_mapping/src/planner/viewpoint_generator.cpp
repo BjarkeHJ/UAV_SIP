@@ -82,6 +82,8 @@ std::vector<Viewpoint> ViewpointGenerator::build_chain(const VoxelKeySet& initia
         // Generate viewpoint candidates for clusters
         std::vector<Viewpoint> candidates = generate_candidates_for_clusters(clusters, cumulative_coverage);
 
+        std::cout << "Number of viewpoint candidates: " << candidates.size() << std::endl; 
+
         if (candidates.empty()) break;
 
         // Select the best candidate for this chain step
@@ -94,17 +96,15 @@ std::vector<Viewpoint> ViewpointGenerator::build_chain(const VoxelKeySet& initia
         selected->compute_coverage_score(cumulative_coverage);
         selected->set_status(ViewpointStatus::PLANNED);
 
-        // Store coverage before adding newly observed
-        VoxelKeySet coverage_before_this = cumulative_coverage;
-        
-        // Update cumulative coverage
+        // Compute expansion center with coverage_before and selected's visible (to identify newly found)
+        expansion_center = compute_expansion_center(selected->visible_voxels(), cumulative_coverage);
+
+        // Update cumulative coverage for next iteration
         for (const auto& key : selected->visible_voxels()) {
             cumulative_coverage.insert(key);
         }
-
-        // Compute expansion center with coverage_before and selected's visible (to identify newly found)
-        expansion_center = compute_expansion_center(selected->visible_voxels(), coverage_before_this);
-
+        
+        // Update position
         previous_position = selected->position();
 
         // Add to chain
