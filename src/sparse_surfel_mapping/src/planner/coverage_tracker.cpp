@@ -11,12 +11,21 @@ CoverageTracker::CoverageTracker(const InspectionPlannerConfig& config)
 void CoverageTracker::mark_observed(const VoxelKeySet& voxels, uint64_t viewpoint_id) {
     (void)viewpoint_id; // could track viewpoint observed
 
+    if (!map_ || voxels.empty()) return;
+
+    bool is_first_observation = observed_surfels_.empty();
+
+    // Update observed set
     for (const auto& key : voxels) {
-        observed_voxels_.insert(key);
+        observed_surfels_.insert(key);
         observation_counts_[key]++;
     }
 
-    stats_.covered_surfels = observed_voxels_.size();
+    // Update frontier set
+    if (is_first_observation) compute_full_frontier_set(); // full if first
+    else update_frontier_set(frontier_surfels_, voxels, observed_surfels_, *map_); // incremental ...
+
+    stats_.covered_surfels = observed_surfels_.size();
 }
 
 void CoverageTracker::record_visited_viewpoint(const Viewpoint& viewpoint) {
@@ -30,6 +39,63 @@ void CoverageTracker::record_visited_viewpoint(const Viewpoint& viewpoint) {
 
     // Update observed surface
     mark_observed(viewpoint.visible_voxels(), viewpoint.id());
+}
+
+void CoverageTracker::compute_full_frontier_set() {
+    frontier_surfels_.clear();
+    if (!map_) return;
+
+    for (const auto& covered_key : observed_surfels_) {
+
+        // check nb-26 conn
+        for (int dx = -1; dx <= 1; ++dx) {
+            for (int dy = -1; dy <= 1; ++dy) {
+                for (int dz = -1; dz <= 1; ++dz) {
+                    if (dx == 0 && dy == 0 && dz == 0) continue; // skip self
+
+                    VoxelKey nb{covered_key.x + dx, covered_key.y + dy, covered_key.z + dz};
+
+                    if (observed_surfels_.count(nb) > 0) continue; // already covered
+                    if (frontier_surfels_.count(nb) > 0) continue; // already frontier
+
+                    // frontier found: uncovered with covered neighbor(s)
+                    auto voxel_opt = map_->get_voxel(nb);
+                    if (voxel_opt && voxel_opt->get().has_valid_surfel()) {
+                        frontier_surfels_.insert(nb);
+                    }
+                }
+            }
+        }
+    }
+}
+
+void CoverageTracker::update_frontier_set(VoxelKeySet& frontier_set, const VoxelKeySet& newly_covered, const VoxelKeySet& total_coverage, const SurfelMap& map) {
+    // Remove newly covered keys from frontier set (no longer frontiers as they are covered)
+    for (const auto& key : newly_covered) {
+        frontier_set.erase(key);
+    }
+
+    // Add frontiers adjacent to newly covered voxels (move the frontier-horizon)
+    for (const auto& covered_key : newly_covered) {
+        // check nb-26 conn
+        for (int dx = -1; dx <= 1; ++dx) {
+            for (int dy = -1; dy <= 1; ++dy) {
+                for (int dz = -1; dz <= 1; ++dz) {
+                    if (dx == 0 && dy == 0 && dz == 0) continue; // skip self
+
+                    VoxelKey nb{covered_key.x + dx, covered_key.y + dy, covered_key.z + dz};
+
+                    if (total_coverage.count(nb) > 0) continue; // already covered
+
+                    // frontier found: uncovered with covered neighbor(s)
+                    auto voxel_opt = map.get_voxel(nb);
+                    if (voxel_opt && voxel_opt->get().has_valid_surfel()) {
+                        frontier_set.insert(nb);
+                    }
+                }
+            }
+        }
+    }
 }
 
 bool CoverageTracker::is_viewpoint_visited(const Viewpoint& viewpoint) const {
@@ -52,7 +118,7 @@ bool CoverageTracker::is_viewpoint_visited(const Viewpoint& viewpoint) const {
 }
 
 bool CoverageTracker::is_observed(const VoxelKey& key) const {
-    return observed_voxels_.count(key) > 0;
+    return observed_surfels_.count(key) > 0;
 }
 
 size_t CoverageTracker::get_observation_count(const VoxelKey& key) const {
@@ -62,7 +128,7 @@ size_t CoverageTracker::get_observation_count(const VoxelKey& key) const {
 
 void CoverageTracker::update_statistics(size_t total_surfels) {
     stats_.total_surfles = total_surfels;
-    stats_.covered_surfels = observed_voxels_.size();
+    stats_.covered_surfels = observed_surfels_.size();
     stats_.viewpoints_visited = visited_viewpoints_.size();
 
     if (total_surfels > 0) {
@@ -74,7 +140,7 @@ void CoverageTracker::update_statistics(size_t total_surfels) {
 }
 
 void CoverageTracker::reset() {
-    observed_voxels_.clear();
+    observed_surfels_.clear();
     observation_counts_.clear();
     visited_viewpoints_.clear();
     stats_ = PlanningStatistics();
@@ -88,7 +154,7 @@ float CoverageTracker::get_local_coverage_ratio(const VoxelKeySet& local_voxels)
 
     for (const auto& key : local_voxels) {
         total_in_region++;
-        if (observed_voxels_.count(key) > 0) {
+        if (observed_surfels_.count(key) > 0) {
             observed_in_region++;
         }
     }

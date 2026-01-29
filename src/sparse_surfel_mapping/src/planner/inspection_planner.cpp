@@ -24,6 +24,7 @@ InspectionPlanner::InspectionPlanner(const InspectionPlannerConfig& config)
 
 void InspectionPlanner::initialize(SurfelMap* map) {
     map_ = map;
+    coverage_tracker_.set_map(map_);
     viewpoint_generator_.set_map(map_);
     viewpoint_generator_.set_coverage_tracker(&coverage_tracker_);
     rrt_planner_.set_map(map_);
@@ -165,9 +166,10 @@ bool InspectionPlanner::validate_path() {
 }
 
 bool InspectionPlanner::plan() {
-    if (!map_ || planner_state_ == PlannerState::EMERGENCY_STOP) return false;
+    if (!map_) return false;
     
     auto t_start = std::chrono::high_resolution_clock::now();
+    
     planner_state_ = PlannerState::PLANNING;
     coverage_tracker_.update_statistics(map_->num_valid_surfels());
 
@@ -191,7 +193,11 @@ bool InspectionPlanner::plan() {
     // If the planner needs full replan: Scrap old and replan from current drone pose
     if (needs_replan_) {
         Viewpoint seed_vp(current_position_, current_yaw_, config_.camera);
-        seed_vp.compute_visibility(*map_, true);
+        
+        if (!coverage_tracker_.observed_surfels().empty()) {
+            seed_vp.compute_visibility(*map_, true); // only if not initial
+        }
+
         new_vpts = viewpoint_generator_.generate_viewpoints(seed_vp, desired_new, plan_observed);
         if (!new_vpts.empty()) {
             needs_replan_ = false;
@@ -356,10 +362,6 @@ void InspectionPlanner::mark_target_reached() {
     }
     
     update_statistics();
-}
-
-const Viewpoint* InspectionPlanner::next_target() const {
-    return viewpoints_.empty() ? nullptr : &viewpoints_.front();
 }
 
 bool InspectionPlanner::is_complete() {

@@ -31,23 +31,12 @@ struct CollisionConfig {
 
 struct ViewpointConfig {
     // Viewpoint Geometry
-    float optimal_view_distance{1.5f};
-    float min_view_distance{1.0f};
-    float max_view_distance{3.0f};
-
-    // Viewpoint generation
-    float max_expansion_radius{50.0f}; // how far away from the current viewpoint the frontier search can look (will pick closest valid frontier cluster)
-    
-    // Frontier clustering
-    float frontier_wavefront_width{2.0f};
-    float frontier_cluster_radius{1.0f}; // wavefront clustering radius
-    size_t min_cluster_size{5};
-
-    // Coverage overlap
-    float target_overlap_ratio{0.20f};
-    float min_new_coverage_ratio{0.1f};
+    float optimal_view_distance{1.0f};
+    float min_view_distance{0.8f};
+    float max_view_distance{1.5f};
 
     // Scoring
+    float min_new_coverage_ratio{0.2f};
     float new_coverage_weight{0.5f};
     float frontier_priority_weight{0.3f};
     float distance_weight{0.2f};
@@ -55,8 +44,8 @@ struct ViewpointConfig {
 
 struct RRTConfig {
     size_t max_iterations{2000};
-    float step_size{0.3f};
-    float goal_bias{0.3};
+    float step_size{0.1f};
+    float goal_bias{0.1f};
     float sample_margin{25.0f}; // large corridor search (bounded search)
 };
 
@@ -67,7 +56,7 @@ struct InspectionPlannerConfig {
     RRTConfig rrt;
 
     // Planning strategy
-    size_t max_viewpoints_in_plan{3};
+    size_t max_viewpoints_in_plan{1};
 
     // Viewpoint Ordering
     size_t two_opt_iterations{100};
@@ -99,7 +88,6 @@ struct ViewpointState {
     float yaw{0.0f}; // CCW
 
     VoxelKeySet visible_voxels;
-    VoxelKeySet new_coverage_voxels;
 
     float coverage_score{0.0f};
     float total_score{0.0f};
@@ -129,40 +117,6 @@ struct FrustumPlanes {
     }
 };
 
-struct FrontierSurfel {
-    VoxelKey key;
-    Eigen::Vector3f position;
-    Eigen::Vector3f normal;
-    float distance_to_expansion{0.0f};
-    size_t uncovered_neighbor_count{0};
-    float frontier_score{0.0f};
-    bool is_covered{false};
-};
-
-struct FrontierCluster {
-    std::vector<FrontierSurfel> surfels;
-    Eigen::Vector3f centroid{Eigen::Vector3f::Zero()};
-    Eigen::Vector3f mean_normal{Eigen::Vector3f::Zero()};
-    float total_priority{0.0f};
-    Eigen::Vector3f suggested_view_position{Eigen::Vector3f::Zero()};
-    float suggested_yaw;
-
-    void compute_centroid() {
-        if (surfels.empty()) return;
-        centroid = Eigen::Vector3f::Zero();
-        mean_normal = Eigen::Vector3f::Zero();
-        total_priority = 0.0f;
-
-        for (const auto& s : surfels) {
-            centroid += s.position;
-            mean_normal += s.normal;
-            total_priority += s.frontier_score;
-        }
-
-        centroid /= static_cast<float>(surfels.size());
-        mean_normal.normalize();
-    }
-};
 
 // Statistics
 struct PlanningStatistics {

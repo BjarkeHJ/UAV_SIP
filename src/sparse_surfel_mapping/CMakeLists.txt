@@ -67,7 +67,6 @@ add_executable(
 
   src/planner/viewpoint.cpp
   src/planner/viewpoint_generator.cpp
-  src/planner/frontier_finder.cpp
   src/planner/coverage_tracker.cpp
   src/planner/inspection_planner.cpp
   src/planner/rrt.cpp

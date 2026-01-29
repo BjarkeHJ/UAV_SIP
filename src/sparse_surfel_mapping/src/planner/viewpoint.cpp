@@ -263,11 +263,10 @@ size_t Viewpoint::compute_visibility(const SurfelMap& map, bool check_occlusion)
 }
 
 float Viewpoint::compute_coverage_score(const VoxelKeySet& observed_voxels) {
-    state_.new_coverage_voxels.clear();
-
+    size_t new_count = 0;
     for (const auto& key : state_.visible_voxels) {
         if (observed_voxels.find(key) == observed_voxels.end()) {
-            state_.new_coverage_voxels.insert(key);
+            new_count++;
         }
     }
 
@@ -276,16 +275,11 @@ float Viewpoint::compute_coverage_score(const VoxelKeySet& observed_voxels) {
         state_.coverage_score = 0.0f;
     }
     else {
-        const float new_ratio = static_cast<float>(state_.new_coverage_voxels.size()) / static_cast<float>(state_.visible_voxels.size());
+        const float new_ratio = static_cast<float>(new_count) / static_cast<float>(state_.visible_voxels.size());
         state_.coverage_score = new_ratio;
     }
 
     return state_.coverage_score;
-}
-
-void Viewpoint::compute_total_score(const VoxelKeySet& observed_voxels) {
-    compute_coverage_score(observed_voxels);
-    state_.total_score = state_.coverage_score;
 }
 
 bool Viewpoint::is_similar_to(const Viewpoint& other, float pos_th, float angle_th) const {

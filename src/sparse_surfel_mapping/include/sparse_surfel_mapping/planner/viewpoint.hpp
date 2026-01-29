@@ -61,9 +61,7 @@ public:
     
     // Visibility results
     const VoxelKeySet& visible_voxels() const { return state_.visible_voxels; }
-    const VoxelKeySet& new_coverage_voxels() const { return state_.new_coverage_voxels; }
     size_t num_visible() const { return state_.visible_voxels.size(); }
-    size_t num_new_coverage() const { return state_.new_coverage_voxels.size(); }
 
     float coverage_score() const { return state_.coverage_score; }
     float total_score() const { return state_.total_score; }

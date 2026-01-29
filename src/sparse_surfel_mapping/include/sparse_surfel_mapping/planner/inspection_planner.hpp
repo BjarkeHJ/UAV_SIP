@@ -38,7 +38,6 @@ public:
     void mark_target_reached(); // mark front viewpoint visited
     bool is_complete();
 
-    const Viewpoint* next_target() const;
     const std::deque<Viewpoint>& viewpoints() const { return viewpoints_; }
     size_t remaining_count() const { return viewpoints_.size(); }
     bool has_plan() const { return !viewpoints_.empty(); }
@@ -49,6 +48,8 @@ public:
     PlannerState get_planner_state() const { return planner_state_; }
     const PlanningStatistics& statistics() const { return stats_; }
     const CoverageTracker& coverage() const { return coverage_tracker_; }
+
+    std::vector<Viewpoint> vpt_cand() const { return viewpoint_generator_.candidates(); }
 
     void request_replan();
     void reset();

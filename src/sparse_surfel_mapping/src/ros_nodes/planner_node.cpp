@@ -20,13 +20,17 @@ InspectionPlannerNode::InspectionPlannerNode(const rclcpp::NodeOptions& options)
     fov_cloud_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("inspection_planner/fov_cloud", 10);
     fov_timer_ = this->create_wall_timer(
         std::chrono::duration<double>(1.0 / 5.0),
-        std::bind(&InspectionPlannerNode::publish_fov_pointcloud, this)
+        // std::bind(&InspectionPlannerNode::publish_fov_pointcloud, this)
+        std::bind(&InspectionPlannerNode::publish_cands, this)
     );
     surfel_map_coverage_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("/surfel_map/coverage_map", 10);
     marker_timer_ = this->create_wall_timer(
         std::chrono::duration<double>(1.0 / 5.0),
         std::bind(&InspectionPlannerNode::publish_surfel_coverage, this)
     );
+
+    vpt_cands_pub_ = this->create_publisher<geometry_msgs::msg::PoseArray>("temporary/cand_vpts", 10);
+
 
     // TIMERS
     if (safety_rate_ > 0.0) {
@@ -451,7 +455,7 @@ void InspectionPlannerNode::publish_fov_pointcloud() {
     const float voxel_size = map_->voxel_size();
 
     // Check which voxels have been observed before (for coloring)
-    const VoxelKeySet& observed_voxels = planner_->coverage().observed_voxels();
+    const VoxelKeySet& observed_voxels = planner_->coverage().observed_surfels();
 
     for (const auto& key : visible_voxels) {
         // Compute voxel center
@@ -491,8 +495,10 @@ void InspectionPlannerNode::publish_surfel_coverage() {
 
     const auto& surfels = map_->get_valid_surfels();
 
-    const VoxelKeySet& obs_set = planner_->coverage().observed_voxels();
+    const VoxelKeySet& obs_set = planner_->coverage().observed_surfels();
     const std::unordered_map<VoxelKey, size_t, VoxelKeyHash> obs_counts = planner_->coverage().observations_counts();
+
+    const VoxelKeySet& frontier_set = planner_->coverage().frontier_surfels();
 
     auto viz_now = this->get_clock()->now();
 
@@ -513,7 +519,7 @@ void InspectionPlannerNode::publish_surfel_coverage() {
     surfel.action = visualization_msgs::msg::Marker::ADD;
 
     int marker_id = 0;
-    size_t max_obs = 0;
+    // size_t max_obs = 0;
 
     for (const auto& sref : surfels) {
         const Surfel& s = sref.get();
@@ -554,13 +560,21 @@ void InspectionPlannerNode::publish_surfel_coverage() {
         // color (coverage state)        
         const VoxelKey& skey = s.key();
         auto it = obs_set.find(skey);
+        auto fit = frontier_set.find(skey);
 
         if (it != obs_set.end()) {
-            const size_t count = obs_counts.find(skey)->second;
-            if (count > max_obs) max_obs = count;
+            // const size_t count = obs_counts.find(skey)->second;
+            // if (count > max_obs) max_obs = count;
             surfel.color.r = 0.0f; 
-            surfel.color.g = static_cast<float>(count) / static_cast<float>(max_obs);
+            // surfel.color.g = static_cast<float>(count) / static_cast<float>(max_obs);
+            surfel.color.g = 1.0f;
             surfel.color.b = 0.0f;
+            surfel.color.a = 0.8f;
+        }
+        else if (fit != frontier_set.end()) {
+            surfel.color.r = 1.0f;
+            surfel.color.g = 0.0f;
+            surfel.color.b = 1.0f;
             surfel.color.a = 0.8f;
         }
         else {
@@ -574,6 +588,33 @@ void InspectionPlannerNode::publish_surfel_coverage() {
     }
 
     surfel_map_coverage_pub_->publish(marker_array);
+
+}
+
+void InspectionPlannerNode::publish_cands() {
+    if (!map_) return;
+
+    geometry_msgs::msg::PoseArray cands_msg;
+    cands_msg.header.frame_id = global_frame_;
+    cands_msg.header.stamp = this->get_clock()->now();
+
+    const auto& cands = planner_->vpt_cand();
+    if (cands.empty()) return;
+
+    for (const auto& c : cands) {
+        geometry_msgs::msg::Pose p;
+        p.position.x = c.position().x();
+        p.position.y = c.position().y();
+        p.position.z = c.position().z();
+
+        tf2::Quaternion q;
+        q.setRPY(0, 0, c.yaw());
+        p.orientation = tf2::toMsg(q);
+
+        cands_msg.poses.push_back(p);
+    }
+
+    vpt_cands_pub_->publish(cands_msg);
 
 }
 

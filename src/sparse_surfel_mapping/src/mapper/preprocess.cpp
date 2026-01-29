@@ -333,7 +333,7 @@ void ScanPreprocess::compute_measurement_weight(PointWithNormal& pn, float sin_t
 
     Eigen::Vector3f view_dir = pn.position.normalized(); // sensor -> point
     float cos_i = std::abs(pn.normal.dot(-view_dir));
-    float w_incidence = std::pow(cos_i, 1.5f);
+    float w_incidence = std::pow(cos_i, 3.0f);
 
     float w_condition = std::clamp(sin_theta, 0.0f, 1.0f);
     pn.weight = w_range * w_incidence * w_condition;
