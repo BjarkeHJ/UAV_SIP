@@ -242,7 +242,7 @@ std::vector<VoxelKeySet> ViewpointGenerator::cluster_frontiers(const VoxelKeySet
     if (frontier_keys.empty() || !map_) return clusters;
 
     const float normal_th = std::cos(config_.camera.max_incidence_angle_deg * M_PI /180.0f);
-    const size_t min_cluster_size = 3;
+    const size_t min_cluster_size = 5;
 
     VoxelKeySet remaining = frontier_keys;
 

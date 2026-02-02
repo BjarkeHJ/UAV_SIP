@@ -67,7 +67,7 @@ void SurfelMapNode::declare_parameters() {
     this->declare_parameter("max_depth_jump_m", 0.1);
 
     // Map
-    this->declare_parameter("voxel_size", 0.3);
+    this->declare_parameter("voxel_size", 0.1);
     this->declare_parameter("initial_bucket_count", 10000);
 
     // Surfel

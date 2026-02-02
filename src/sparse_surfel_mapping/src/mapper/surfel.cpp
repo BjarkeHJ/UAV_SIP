@@ -22,7 +22,7 @@ Surfel::Surfel(const SurfelConfig& config) : Surfel() {
 }
 
 void Surfel::integrate_point(const Eigen::Vector3f& point, const Eigen::Vector3f& normal, float weight) {
-    if (weight <= 0.1f) {
+    if (weight <= 0.2f) {
         return;
     }
 
@@ -62,7 +62,8 @@ void Surfel::reset() {
 }
 
 void Surfel::recompute_normal() {
-    if (count_ < config_.min_points_for_validity || sum_weights_ < constants::EPSILON) {
+    // if (count_ < config_.min_points_for_validity || sum_weights_ < constants::EPSILON) {
+    if (count_ < config_.min_points_for_validity || sum_weights_ < 100.0f) {
         is_valid_ = false;
         return;
     }

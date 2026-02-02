@@ -63,14 +63,14 @@ struct PreprocessConfig {
     bool orient_towards_sensor{true};
 
     size_t range_smooth_iters{3};
-    float depth_sigma_m{0.05f};
-    float spatial_sigma_px{1.0f};
-    float max_depth_jump_m{0.10f};
+    float depth_sigma_m{0.1f}; // 0.05
+    float spatial_sigma_px{2.0f}; // 1.0
+    float max_depth_jump_m{0.15f}; // 0.1
 };
 
 struct SurfelConfig {
-    size_t min_points_for_validity{25};
-    float planarity_threshold{0.01f};
+    size_t min_points_for_validity{100};
+    float planarity_threshold{0.1f}; // 0.01
     float scale_threshold{0.01f};
     float degeneracy_threshold{0.1f};
     float max_eigenvalue_ratio{100.0f}; 

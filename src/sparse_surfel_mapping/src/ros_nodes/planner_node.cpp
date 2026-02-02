@@ -30,7 +30,12 @@ InspectionPlannerNode::InspectionPlannerNode(const rclcpp::NodeOptions& options)
     );
 
     vpt_cands_pub_ = this->create_publisher<geometry_msgs::msg::PoseArray>("temporary/cand_vpts", 10);
-
+    
+    pcd_map_coverage_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/surfel_map/coverage_cloud", 10);
+    pcd_timer_ = this->create_wall_timer(
+        std::chrono::duration<double>(1.0 / 5.0),
+        std::bind(&InspectionPlannerNode::publish_pcd_coverage, this)
+    );
 
     // TIMERS
     if (safety_rate_ > 0.0) {
@@ -494,7 +499,6 @@ void InspectionPlannerNode::publish_surfel_coverage() {
     visualization_msgs::msg::MarkerArray marker_array;
 
     const auto& surfels = map_->get_valid_surfels();
-
     const VoxelKeySet& obs_set = planner_->coverage().observed_surfels();
     const std::unordered_map<VoxelKey, size_t, VoxelKeyHash> obs_counts = planner_->coverage().observations_counts();
 
@@ -616,6 +620,74 @@ void InspectionPlannerNode::publish_cands() {
 
     vpt_cands_pub_->publish(cands_msg);
 
+}
+
+void InspectionPlannerNode::publish_pcd_coverage() {
+    if (!map_) return;
+    sensor_msgs::msg::PointCloud2 cloud_msg;
+    cloud_msg.header.frame_id = global_frame_;
+    cloud_msg.header.stamp = this->get_clock()->now();
+
+    // get surfels
+    std::shared_lock lock(map_->mutex_);
+    const auto& surfels = map_->get_valid_surfels();
+    lock.unlock();
+
+    cloud_msg.height = 1;
+    cloud_msg.width = surfels.size();
+    cloud_msg.is_dense = true;
+    cloud_msg.is_bigendian = false;
+
+    sensor_msgs::PointCloud2Modifier modifier(cloud_msg);
+    modifier.setPointCloud2FieldsByString(2, "xyz", "rgb");
+
+    // iterators over message fields
+    sensor_msgs::PointCloud2Iterator<float> iter_x(cloud_msg, "x");
+    sensor_msgs::PointCloud2Iterator<float> iter_y(cloud_msg, "y");
+    sensor_msgs::PointCloud2Iterator<float> iter_z(cloud_msg, "z");
+    sensor_msgs::PointCloud2Iterator<uint8_t> iter_r(cloud_msg, "r");
+    sensor_msgs::PointCloud2Iterator<uint8_t> iter_g(cloud_msg, "g");
+    sensor_msgs::PointCloud2Iterator<uint8_t> iter_b(cloud_msg, "b");
+
+    // get keys for observed surfels
+    const VoxelKeySet& obs_set = planner_->coverage().observed_surfels();
+    const VoxelKeySet& frontier_set = planner_->coverage().frontier_surfels();
+
+    for (const auto& sref : surfels) {
+        const Surfel& surfel = sref.get();
+        const Eigen::Vector3f smean = surfel.mean();
+
+        *iter_x = smean.x();
+        *iter_y = smean.y();
+        *iter_z = smean.z();
+
+        // color according to observed, frontier, unknown
+        if (obs_set.count(surfel.key()) > 0) {
+            *iter_r = 0;
+            *iter_g = 255;
+            *iter_b = 0;
+        }
+        else if (frontier_set.count(surfel.key()) > 0) {
+            *iter_r = 255;
+            *iter_g = 0;
+            *iter_b = 255;
+        }
+        else {
+            *iter_r = 10;
+            *iter_g = 10;
+            *iter_b = 10;
+        }
+
+        // increment iterators
+        ++iter_x;
+        ++iter_y;
+        ++iter_z;
+        ++iter_r;
+        ++iter_g;
+        ++iter_b;
+    }
+
+    pcd_map_coverage_pub_->publish(cloud_msg);
 }
 
 } // namespace

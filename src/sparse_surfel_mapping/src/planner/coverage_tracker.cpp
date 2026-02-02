@@ -22,8 +22,9 @@ void CoverageTracker::mark_observed(const VoxelKeySet& voxels, uint64_t viewpoin
     }
 
     // Update frontier set
-    if (is_first_observation) compute_full_frontier_set(); // full if first
-    else update_frontier_set(frontier_surfels_, voxels, observed_surfels_, *map_); // incremental ...
+    compute_full_frontier_set();
+    // if (is_first_observation) compute_full_frontier_set(); // full if first
+    // else update_frontier_set(frontier_surfels_, voxels, observed_surfels_, *map_); // incremental ...
 
     stats_.covered_surfels = observed_surfels_.size();
 }

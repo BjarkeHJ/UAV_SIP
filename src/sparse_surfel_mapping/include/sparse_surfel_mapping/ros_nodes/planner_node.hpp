@@ -15,6 +15,7 @@
 
 #include <visualization_msgs/msg/marker_array.hpp>
 
+
 #include "sparse_surfel_mapping/mapper/surfel_map.hpp"
 #include "sparse_surfel_mapping/planner/inspection_planner.hpp"
 
@@ -67,13 +68,17 @@ private:
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr fov_cloud_pub_;
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr surfel_map_coverage_pub_;
 
+    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pcd_map_coverage_pub_;
+    void publish_pcd_coverage();
+
     rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr vpt_cands_pub_;
     void publish_cands();
 
     rclcpp::TimerBase::SharedPtr plan_timer_;
     rclcpp::TimerBase::SharedPtr safety_timer_;
     rclcpp::TimerBase::SharedPtr fov_timer_;
-    rclcpp::TimerBase::SharedPtr marker_timer_;
+    rclcpp::TimerBase::SharedPtr marker_timer_; // surfel 
+    rclcpp::TimerBase::SharedPtr pcd_timer_; // pcd surfel vis
 
     std::string global_frame_;
     std::string drone_frame_;

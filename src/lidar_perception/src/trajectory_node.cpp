@@ -27,6 +27,7 @@ TrajectoryNode::TrajectoryNode() : Node("trajectory_node") {
     target_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>(target_topic_, 5);
     vis_path_pub_ = this->create_publisher<nav_msgs::msg::Path>("path_vis_", 10);
 
+    publish_target();
     RCLCPP_INFO(this->get_logger(), "Trajectory node (Action Server) started...");
 }
 

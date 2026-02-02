@@ -19,7 +19,7 @@ struct CameraConfig {
     float hfov_deg{90.0f};
     float vfov_deg{60.0f}; 
     float min_range{0.1f};
-    float max_range{8.0f};
+    float max_range{3.0f};
     float max_incidence_angle_deg{75.0f};  
 };
 
@@ -43,7 +43,7 @@ struct ViewpointConfig {
 };
 
 struct RRTConfig {
-    size_t max_iterations{2000};
+    size_t max_iterations{500};
     float step_size{0.1f};
     float goal_bias{0.1f};
     float sample_margin{25.0f}; // large corridor search (bounded search)

@@ -164,11 +164,15 @@ size_t Viewpoint::compute_visibility(const SurfelMap& map, bool check_occlusion)
     const float voxel_size = map.voxel_size();
     const auto& voxels = map.voxels();
 
+    const Eigen::Vector3f forward = state_.forward_direction();
+    const Eigen::Vector3f up = Eigen::Vector3f::UnitZ();
+    const Eigen::Vector3f right = forward.cross(up);
+    
     Eigen::Vector3f frustum_min = frustum_.corners[0];
     Eigen::Vector3f frustum_max = frustum_.corners[0];
     for (const auto& corner : frustum_.corners) {
-        frustum_min = frustum_min.cwiseMin(corner);
-        frustum_max = frustum_max.cwiseMax(corner);
+            frustum_min = frustum_min.cwiseMin(corner);
+            frustum_max = frustum_max.cwiseMax(corner);
     }
 
     const VoxelKey min_key{
@@ -183,78 +187,94 @@ size_t Viewpoint::compute_visibility(const SurfelMap& map, bool check_occlusion)
         static_cast<int32_t>(std::ceil(frustum_max.z() / voxel_size))  
     };
 
+    constexpr int BUFFER_W = 64;
+    constexpr int BUFFER_H = 48;
+    constexpr int BUFFER_SIZE = BUFFER_W * BUFFER_H; // depth image size
+
+    const Eigen::Vector3f near_center = 0.25 * (frustum_.corners[0] + frustum_.corners[1] + frustum_.corners[2] + frustum_.corners[3]);
+    const float near_dist = forward.dot(near_center - state_.position);
+
+    const float tan_half_hfov = std::abs(right.dot(frustum_.corners[1] - near_center)) / near_dist;
+    const float tan_half_vfov = std::abs(up.dot(frustum_.corners[0] - near_center)) / near_dist;
+
+    const float depth_tol = voxel_size * 2.0f;
+
+    struct Candidate {
+        VoxelKey key;
+        int px, py;
+        float depth;
+    };
+
+    std::vector<Candidate> candidates;
+    candidates.reserve(2048);
+
+    auto project_to_pixel = [&](const Eigen::Vector3f& world_pos, int& px, int& py, float& depth) -> bool {
+        const Eigen::Vector3f local = world_pos - state_.position;
+        depth = forward.dot(local);
+
+        if (depth <= 0.0f) return false;
+
+        const float x_cam = right.dot(local);
+        const float y_cam = up.dot(local);
+
+        const float u_ndc = x_cam / (depth * tan_half_hfov);
+        const float v_ndc = y_cam / (depth * tan_half_vfov);
+
+        if (u_ndc < -1.0f || u_ndc > 1.0f || v_ndc < -1.0f || v_ndc > 1.0f) return false;
+
+        px = std::clamp(static_cast<int>((u_ndc + 1.0f) * 0.5f * BUFFER_W), 0, BUFFER_W - 1);
+        py = std::clamp(static_cast<int>((v_ndc + 1.0f) * 0.5f * BUFFER_H), 0, BUFFER_H - 1);
+        return true;
+    };
+
+    // First pass: Determine all visible surfels in frustum
     for (int32_t x = min_key.x; x <= max_key.x; ++x) {
         for (int32_t y = min_key.y; y <= max_key.y; ++y) {
             for (int32_t z = min_key.z; z <= max_key.z; ++z) {
-                VoxelKey key{x,y,z};
+                const VoxelKey key{x, y, z};
+                const auto voxel_opt = voxels.get(key);
 
-                // Check voxel center visibility
-                Eigen::Vector3f voxel_min(
-                    key.x * voxel_size,
-                    key.y * voxel_size,
-                    key.z * voxel_size
-                );
-
-                Eigen::Vector3f voxel_max = voxel_min + Eigen::Vector3f::Constant(voxel_size);
-                if (!frustum_calc_.is_voxel_visible(frustum_, voxel_min, voxel_max))
-                    continue;
-
-                auto voxel_opt = voxels.get(key);
                 if (!voxel_opt || !voxel_opt->get().has_valid_surfel()) {
                     continue;
                 }
 
-                const Voxel& voxel = voxel_opt->get();
-                const Surfel& surfel = voxel.surfel();
-                
-                // Surfel visible?
-                if (frustum_calc_.is_surfel_visible(frustum_, state_.position, surfel.mean(), surfel.normal())) {
-                    
-                    // Optional ray-cast occlusion check 
-                    check_occlusion = false; // temp
-                    if (check_occlusion) {
-                        bool occluded = false;
+                const Surfel& surfel = voxel_opt->get().surfel();
 
-                        const Eigen::Vector3f ray_dir = (surfel.mean() - state_.position).normalized();
-                        const float dist = (surfel.mean() - state_.position).norm();
-                        const float step = voxel_size * 0.5f;
-
-                        // step along ray dir
-                        for (float t = step; t < dist; t += step) {
-                            Eigen::Vector3f sample_point = state_.position + ray_dir * t;
-                            VoxelKey sample_key{
-                                static_cast<int32_t>(std::floor(sample_point.x() / voxel_size)),  
-                                static_cast<int32_t>(std::floor(sample_point.y() / voxel_size)),  
-                                static_cast<int32_t>(std::floor(sample_point.z() / voxel_size))  
-                            };
-
-                            if (sample_key == key) continue;
-
-                            // hit valid surfel?
-                            auto blocking_voxel = voxels.get(sample_key);
-                            if (blocking_voxel && blocking_voxel->get().has_valid_surfel()) {
-                                occluded = true;
-                                break;
-                            }
-                        }
-
-                        if (occluded) continue;
-                    }
-                    
-                    state_.visible_voxels.insert(key);
-                    const auto& voxels = map.voxels();
-                    const auto& nb26 = voxels.get_neighbors_26(key);
-                    for (const auto& nb : nb26) {
-                        if (nb.get().has_valid_surfel()) {
-                            const Surfel& surfel = nb.get().surfel();
-                            if (frustum_calc_.is_surfel_visible(frustum_, state_.position, surfel.mean(), surfel.normal())) {
-                                const auto& nbkey = nb.get().key();
-                                state_.visible_voxels.insert(nbkey);
-                            }
-                        }
-                    }
-
+                if (!frustum_calc_.is_surfel_visible(frustum_, state_.position, surfel.mean(), surfel.normal())) {
+                    continue;
                 }
+
+                int px, py;
+                float depth; 
+                if (project_to_pixel(surfel.mean(), px, py, depth)) {
+                    candidates.push_back({key, px, py, depth});
+                }
+            }
+        }
+    }
+
+    if (candidates.empty()) return 0;
+
+    // Second pass: Occlusion checking (depth selection)
+    if (!check_occlusion) {
+        for (const auto& c : candidates) {
+            state_.visible_voxels.insert(c.key);
+        }
+    }
+    else {
+        std::array<float, BUFFER_SIZE> depth_buffer;
+        depth_buffer.fill(std::numeric_limits<float>::max());
+
+        for (const auto& c : candidates) {
+            const int idx = c.py * BUFFER_W + c.px; // determine candidate image pixel
+            depth_buffer[idx] = std::min(depth_buffer[idx], c.depth); // keep minimum distance
+        }
+
+        // Keep closest plus a small tolerance in depth (slightly occluded but visible)
+        for (const auto& c : candidates) {
+            const int idx = c.py * BUFFER_W + c.px;
+            if (c.depth <= depth_buffer[idx] + depth_tol) {
+                state_.visible_voxels.insert(c.key);
             }
         }
     }
