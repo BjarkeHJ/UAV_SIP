@@ -87,9 +87,27 @@ target_link_libraries(
   Eigen3::Eigen
 )
 
+add_executable(
+  trajectory_tracker
+  src/ros_nodes/trajectory_tracker.cpp
+)
+ament_target_dependencies(
+  trajectory_tracker
+  rclcpp
+  nav_msgs
+  geometry_msgs
+  tf2
+  tf2_ros
+)
+
 # install targets
 install(
   TARGETS surfel_mapping_node
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+install(
+  TARGETS trajectory_tracker
   DESTINATION lib/${PROJECT_NAME}
 )
 

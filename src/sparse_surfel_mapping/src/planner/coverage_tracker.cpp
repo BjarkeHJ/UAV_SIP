@@ -24,7 +24,7 @@ void CoverageTracker::mark_observed(const VoxelKeySet& voxels, uint64_t viewpoin
     // Update frontier set
     compute_full_frontier_set();
     // if (is_first_observation) compute_full_frontier_set(); // full if first
-    // else update_frontier_set(frontier_surfels_, voxels, observed_surfels_, *map_); // incremental ...
+    // else update_frontier_set(coverage_frontiers_, voxels, observed_surfels_, *map_); // incremental ...
 
     stats_.covered_surfels = observed_surfels_.size();
 }
@@ -33,6 +33,14 @@ void CoverageTracker::record_visited_viewpoint(const Viewpoint& viewpoint) {
     ViewpointState state = viewpoint.state();
     state.status = ViewpointStatus::VISITED;
     state.timestamp_visited = std::chrono::duration<double>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
+
+    // Re-evaluate previous viewpoint coverage
+    if (visited_viewpoints_.size() > 0) {
+        ViewpointState& prev_vp_state = visited_viewpoints_.front();
+        Viewpoint prev_vp(prev_vp_state.position, prev_vp_state.yaw, config_.camera);
+        prev_vp.compute_visibility(*map_, true);
+        mark_observed(prev_vp.visible_voxels(), 0);
+    }
 
     // Log visited viewpoints
     visited_viewpoints_.push_back(state);
@@ -43,7 +51,7 @@ void CoverageTracker::record_visited_viewpoint(const Viewpoint& viewpoint) {
 }
 
 void CoverageTracker::compute_full_frontier_set() {
-    frontier_surfels_.clear();
+    coverage_frontiers_.clear();
     if (!map_) return;
 
     for (const auto& covered_key : observed_surfels_) {
@@ -57,12 +65,12 @@ void CoverageTracker::compute_full_frontier_set() {
                     VoxelKey nb{covered_key.x + dx, covered_key.y + dy, covered_key.z + dz};
 
                     if (observed_surfels_.count(nb) > 0) continue; // already covered
-                    if (frontier_surfels_.count(nb) > 0) continue; // already frontier
+                    if (coverage_frontiers_.count(nb) > 0) continue; // already frontier
 
                     // frontier found: uncovered with covered neighbor(s)
                     auto voxel_opt = map_->get_voxel(nb);
                     if (voxel_opt && voxel_opt->get().has_valid_surfel()) {
-                        frontier_surfels_.insert(nb);
+                        coverage_frontiers_.insert(nb);
                     }
                 }
             }
@@ -163,5 +171,59 @@ float CoverageTracker::get_local_coverage_ratio(const VoxelKeySet& local_voxels)
     return static_cast<float>(observed_in_region) / total_in_region;
 }
 
+bool CoverageTracker::is_map_frontier_surfel(const VoxelKey& key) const {
+    if (!map_) return false;
+
+    auto voxel_opt = map_->get_voxel(key);
+    if (!voxel_opt || !voxel_opt->get().has_valid_surfel()) return false;
+
+    size_t nb_count = 0;
+    for (int dx = -1; dx <= 1; ++dx) {
+        for (int dy = -1; dy <= 1; ++dy) {
+            for (int dz = -1; dz <= 1; ++dz) {
+                if (dx == 0 && dy == 0 && dz == 0) continue;
+
+                VoxelKey nb{key.x + dx, key.y + dy, key.z + dz};
+                auto nb_voxel = map_->get_voxel(nb);
+                if (!nb_voxel || !nb_voxel->get().has_valid_surfel()) continue;
+                nb_count++;
+            }
+        }
+    }
+
+    return nb_count < 6; // less than 6 nbs
+}
+
+VoxelKeySet CoverageTracker::map_frontiers() const {
+    VoxelKeySet result;
+    if (!map_) return result;
+
+    const auto& spatial_hash = map_->voxels();
+    auto frontier_cells = spatial_hash.get_frontier_cells();
+    
+    // Search for surfels in coarse grid
+    for (const auto& coarse_key : frontier_cells) {
+        const int base_x = coarse_key.x * SpatialHash::COARSE_FACTOR;
+        const int base_y = coarse_key.y * SpatialHash::COARSE_FACTOR;
+        const int base_z = coarse_key.z * SpatialHash::COARSE_FACTOR;
+
+        for (int dx = 0; dx < SpatialHash::COARSE_FACTOR; ++dx) {
+            for (int dy = 0; dy < SpatialHash::COARSE_FACTOR; ++dy) {
+                for (int dz = 0; dz < SpatialHash::COARSE_FACTOR; ++dz) {
+                    VoxelKey fine_key{base_x + dx, base_y + dy, base_z + dz};
+
+                    auto voxel_opt = map_->get_voxel(fine_key);
+                    if (!voxel_opt || !voxel_opt->get().has_valid_surfel()) continue;
+
+                    if (is_map_frontier_surfel(fine_key)) {
+                        result.insert(fine_key); // found frontier surfel in map
+                    }
+                }
+            }
+        }
+    }
+
+    return result;
+}
 
 } // namespace

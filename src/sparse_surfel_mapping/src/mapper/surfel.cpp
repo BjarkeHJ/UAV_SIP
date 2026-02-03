@@ -22,7 +22,7 @@ Surfel::Surfel(const SurfelConfig& config) : Surfel() {
 }
 
 void Surfel::integrate_point(const Eigen::Vector3f& point, const Eigen::Vector3f& normal, float weight) {
-    if (weight <= 0.2f) {
+    if (weight <= 0.1f) {
         return;
     }
 
@@ -84,7 +84,7 @@ void Surfel::recompute_normal() {
 void Surfel::compute_eigen_decomp() {
     Eigen::Matrix3f C;
     if (sum_weights_ > 1.0f) {
-        C = covariance_ / (sum_weights_ - 1.0f);
+        C = normalized_covariance();
     }
     else {
         C = covariance_;

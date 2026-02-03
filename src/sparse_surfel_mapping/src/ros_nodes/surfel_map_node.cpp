@@ -150,7 +150,6 @@ void SurfelMapNode::pointcloud_callback(const sensor_msgs::msg::PointCloud2::Sha
     preproc_->process();
     preproc_->get_points_with_normal(pns);    
 
-    
     // lock map with map mutex - unique_lock blocks other writers AND readers of the shared object
     std::unique_lock lock(surfel_map_->mutex_);
     size_t integrated = surfel_map_->integrate_points(pns, tf);

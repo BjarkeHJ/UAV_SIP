@@ -149,7 +149,7 @@ std::vector<Viewpoint> ViewpointGenerator::build_chain(const VoxelKeySet& initia
     }
 
     // Working copy of frontier set for speculative updates
-    VoxelKeySet working_frontier = coverage_tracker_->frontier_surfels();
+    VoxelKeySet working_frontier = coverage_tracker_->coverage_frontiers();
 
     if (working_frontier.empty() && !cumulative_coverage.empty()) {
         std::cout << "[ViewpointGenerator] Error: Not able to start chain - no frontiers!" << std::endl;

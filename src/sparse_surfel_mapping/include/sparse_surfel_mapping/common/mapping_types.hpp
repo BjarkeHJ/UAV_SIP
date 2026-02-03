@@ -69,7 +69,7 @@ struct PreprocessConfig {
 };
 
 struct SurfelConfig {
-    size_t min_points_for_validity{100};
+    size_t min_points_for_validity{50};
     float planarity_threshold{0.1f}; // 0.01
     float scale_threshold{0.01f};
     float degeneracy_threshold{0.1f};

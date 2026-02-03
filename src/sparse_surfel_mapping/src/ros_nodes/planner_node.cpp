@@ -502,7 +502,7 @@ void InspectionPlannerNode::publish_surfel_coverage() {
     const VoxelKeySet& obs_set = planner_->coverage().observed_surfels();
     const std::unordered_map<VoxelKey, size_t, VoxelKeyHash> obs_counts = planner_->coverage().observations_counts();
 
-    const VoxelKeySet& frontier_set = planner_->coverage().frontier_surfels();
+    const VoxelKeySet& frontier_set = planner_->coverage().coverage_frontiers();
 
     auto viz_now = this->get_clock()->now();
 
@@ -651,32 +651,44 @@ void InspectionPlannerNode::publish_pcd_coverage() {
 
     // get keys for observed surfels
     const VoxelKeySet& obs_set = planner_->coverage().observed_surfels();
-    const VoxelKeySet& frontier_set = planner_->coverage().frontier_surfels();
+    const VoxelKeySet& coverage_frontier_set = planner_->coverage().coverage_frontiers();
+    const VoxelKeySet map_frontier_set = planner_->coverage().map_frontiers();
 
+    float umax = 0.0001f;
     for (const auto& sref : surfels) {
         const Surfel& surfel = sref.get();
         const Eigen::Vector3f smean = surfel.mean();
+        float su = 1.0f - std::exp(-surfel.sum_weights() / 300.0f);
+        // float su = std::clamp(surfel.eigenvalues().minCoeff() / umax, 0.0f, 1.0f);
 
         *iter_x = smean.x();
         *iter_y = smean.y();
         *iter_z = smean.z();
 
-        // color according to observed, frontier, unknown
-        if (obs_set.count(surfel.key()) > 0) {
-            *iter_r = 0;
-            *iter_g = 255;
-            *iter_b = 0;
-        }
-        else if (frontier_set.count(surfel.key()) > 0) {
+        // color according to uncertainty
+        *iter_r = static_cast<uint8_t>(255.0f * su);
+        *iter_g = 0;
+        *iter_b = static_cast<uint8_t>(255.0f * (1.0f - su));
+
+        // color according to map frontier, observed, frontier, not-covered
+        if (map_frontier_set.count(surfel.key()) > 0) {
             *iter_r = 255;
-            *iter_g = 0;
+            *iter_g = 255;
             *iter_b = 255;
         }
-        else {
-            *iter_r = 10;
-            *iter_g = 10;
-            *iter_b = 10;
+        else if (obs_set.count(surfel.key()) > 0) {
+            *iter_g = 255;
         }
+        // else if (coverage_frontier_set.count(surfel.key()) > 0) {
+        //     *iter_r = 255;
+        //     *iter_g = 0;
+        //     *iter_b = 255;
+        // }
+        // else {
+        //     *iter_r = 10;
+        //     *iter_g = 10;
+        //     *iter_b = 10;
+        // }
 
         // increment iterators
         ++iter_x;

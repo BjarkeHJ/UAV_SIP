@@ -63,11 +63,22 @@ size_t SurfelMap::commit_update() {
     for (auto& [key, updates] : pending_updates_) {
         if (updates.empty()) continue;
         Voxel& voxel = spatial_hash_.get_or_create(key);
+        const bool was_valid = voxel.has_valid_surfel();
         voxel.integrate_points(updates);
         voxel.finalize_surfel();
         points_integrated += updates.size();
+        const bool is_valid = voxel.has_valid_surfel();
+
+        if (!was_valid && is_valid) {
+            // surfel just became valid
+            spatial_hash_.on_surfel_added(key);
+        }
+        else if (was_valid && !is_valid) {
+            // surfel just became invalid
+            spatial_hash_.on_surfel_removed(key);
+        }
     }
-    
+
     total_points_integrated_ += points_integrated;
     pending_updates_.clear();
     update_in_progress_ = false;
@@ -85,6 +96,13 @@ size_t SurfelMap::integrate_points(const std::vector<PointWithNormal>& pns, cons
     begin_update();
     associate_points(pns, transform);
     size_t integrated = commit_update();
+
+    // Update spatial hash for frontier detection (move to integrate_points and adjust timer to wrap the calls there)
+    Eigen::Vector3f position = transform.translation();
+    Eigen::Vector3f forward = transform.rotation() * Eigen::Vector3f::UnitX();
+    float yaw = std::atan2(forward.y(), forward.x());
+    spatial_hash_.observe_frustum(position, yaw, 106.0f, 86.0f, 10.0f); // OBS: UPDATE TO SENSOR CONFIG STRUCT!
+
     return integrated;
 }
 

@@ -26,7 +26,7 @@ public:
     size_t commit_update();
     // eq to begin_update() + associate_points() + commit_update
     size_t integrate_points(const std::vector<PointWithNormal>& pns, const Eigen::Transform<float, 3, Eigen::Isometry>& transform); 
-
+    
     // Pending updates
     bool has_pending_update() const { return !pending_updates_.empty(); }
     size_t pending_update_count() const;

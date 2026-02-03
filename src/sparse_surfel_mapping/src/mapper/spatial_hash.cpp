@@ -239,4 +239,199 @@ std::vector<std::reference_wrapper<const Voxel>> SpatialHash::get_neighbors_in_r
     return result;
 }
 
+
+// Coarse grid
+VoxelKey SpatialHash::fine_to_coarse(const VoxelKey& fine) const {
+    auto floor_div = [](int32_t a, int32_t b) -> int32_t {
+        int32_t d = a / b;
+        int32_t r = a % b;
+        return (r != 0 && ((a ^ b) < 0)) ? d - 1 : d;
+    };
+
+    return VoxelKey{
+        floor_div(fine.x, COARSE_FACTOR),
+        floor_div(fine.y, COARSE_FACTOR),
+        floor_div(fine.z, COARSE_FACTOR)
+    };
+}
+
+SpatialHash::CoarseCellState SpatialHash::coarse_cell_state(const VoxelKey& coarse_key) const {
+    auto it = coarse_state_.find(coarse_key);
+    return (it != coarse_state_.end()) ? it->second : CoarseCellState::UNKNOWN;
+}
+
+void SpatialHash::mark_coarse_free(const VoxelKey& coarse_key) {
+    auto it = coarse_state_.find(coarse_key);
+    if (it == coarse_state_.end()) {
+        // only mark as FREE if currently UNKNOWN (not in hash)
+        coarse_state_[coarse_key] = CoarseCellState::FREE;
+    }
+    // dont downgrade occupied to free
+}
+
+void SpatialHash::mark_coarse_occupied(const VoxelKey& coarse_key) {
+    coarse_state_[coarse_key] = CoarseCellState::OCCUPIED;
+}
+
+void SpatialHash::on_surfel_added(const VoxelKey& key) {
+    VoxelKey coarse_key = fine_to_coarse(key);
+    coarse_surfel_counts_[coarse_key]++; // increment number of surfels in coarse cell
+    mark_coarse_occupied(coarse_key); // mark occupied (ensure)
+}
+
+void SpatialHash::on_surfel_removed(const VoxelKey& key) {
+    VoxelKey coarse_key = fine_to_coarse(key);
+
+    auto it = coarse_surfel_counts_.find(coarse_key);
+    if (it == coarse_surfel_counts_.end()) return; // not existing
+
+    it->second--; // decrement
+    if (it->second == 0) {
+        // last surfel removed -> erase and downgrade to free (still observed)
+        coarse_surfel_counts_.erase(it);
+        coarse_state_[coarse_key] = CoarseCellState::FREE;
+    }
+}
+
+size_t SpatialHash::get_coarse_cell_surfel_count(const VoxelKey& coarse_key) const {
+    auto it = coarse_surfel_counts_.find(coarse_key);
+    return (it != coarse_surfel_counts_.end()) ? it->second : 0;
+}
+
+void SpatialHash::trace_ray(const Eigen::Vector3f& from, const Eigen::Vector3f& to) {
+    const float coarse_size = voxel_size_ * COARSE_FACTOR;
+    Eigen::Vector3f dir = to - from;
+    const float l = dir.norm();
+    if (l < 1e-6f) return;
+    dir /= l;
+
+    const float step = coarse_size * 0.5f;
+    VoxelKey prev_coarse{INT32_MAX, INT32_MAX, INT32_MAX};
+    VoxelKey end_coarse = fine_to_coarse(point_to_key(to));
+
+    bool hit = false;
+
+    for (float t = 0; t < l; t += step) {
+        Eigen::Vector3f pos = from + dir * t;
+        VoxelKey coarse = fine_to_coarse(point_to_key(pos));
+
+        if (coarse != prev_coarse) {
+            if (coarse_cell_state(coarse) == CoarseCellState::OCCUPIED) {
+                hit = true;
+                continue;
+            }
+
+            if (coarse == end_coarse) break; // dont change the last 
+
+            if (hit) {
+                coarse_state_.erase(coarse); // mark UNKNOWN after occulision
+                coarse_surfel_counts_.erase(coarse);
+            }
+            else {
+                mark_coarse_free(coarse);
+            }
+
+            prev_coarse = coarse;
+        }
+    }
+}
+
+void SpatialHash::observe_frustum(const Eigen::Vector3f& sensor_pos, float yaw, float hfov_deg, float vfov_deg, float max_range) {
+    const float coarse_size = voxel_size_ * COARSE_FACTOR;
+
+    const float cos_yaw = std::cos(yaw);
+    const float sin_yaw = std::sin(yaw);
+    const Eigen::Vector3f forward(cos_yaw, sin_yaw, 0.0f);
+    const Eigen::Vector3f right(sin_yaw, -cos_yaw, 0.0f);
+    const Eigen::Vector3f up = Eigen::Vector3f::UnitZ();
+
+    const float tan_half_h = std::tan(hfov_deg * 0.5f * M_PI / 180.0f);
+    const float tan_half_v = std::tan(vfov_deg * 0.5 * M_PI / 180.0f);
+
+    const float far_half_width = max_range * tan_half_h;
+    const float far_half_height = max_range * tan_half_v;
+
+    const int h_samples = std::max(3, static_cast<int>(std::ceil(2.0f * far_half_width / coarse_size)) + 1);
+    const int v_samples = std::max(3, static_cast<int>(std::ceil(2.0f * far_half_height / coarse_size)) + 1);
+
+    for (int vi = 0; vi < v_samples; ++vi) {
+        for (int hi = 0; hi < h_samples; ++hi) {
+            const float u = 2.0f * hi / (h_samples - 1) - 1.0f;
+            const float v = 2.0f * vi / (v_samples - 1) - 1.0f;
+
+            Eigen::Vector3f ray_dir = forward + right * (u * tan_half_h) + up * (v * tan_half_v);
+            ray_dir.normalize();
+
+            Eigen::Vector3f far_point = sensor_pos + ray_dir * max_range;
+            trace_ray(sensor_pos, far_point);
+        }
+    }
+}
+
+bool SpatialHash::is_frontier_coarse(const VoxelKey& coarse_key) const {
+    if (coarse_cell_state(coarse_key) != CoarseCellState::OCCUPIED) {
+        return false; // frontier must contain map
+    }
+
+    // Check nb-6 connectivity for unknown
+    static const std::array<std::array<int32_t, 3>, 6> offsets = {{
+        {-1, 0, 0}, {1, 0, 0},
+        {0, -1, 0}, {0, 1, 0},
+        {0, 0, -1}, {0, 0, 1}
+    }};
+
+    for (const auto& offset : offsets) {
+        VoxelKey nb{coarse_key.x + offset[0], coarse_key.y + offset[1], coarse_key.z + offset[2]};
+        if (coarse_cell_state(nb) == CoarseCellState::UNKNOWN && is_reachable_unknown(nb)) return true;
+    }
+
+    return false;
+}
+
+bool SpatialHash::is_reachable_unknown(const VoxelKey& unknown_key) const {
+    // UNKNOWN cell is reachable if it is adjacent to FREE cell 
+    for (int dx = -1; dx <= 1; ++dx) {
+        for (int dy = -1; dy <= 1; ++dy) {
+            for (int dz = -1; dz <= 1; ++dz) {
+                if (dx == 0 && dy == 0 && dz ==0) continue;
+
+                VoxelKey nb{unknown_key.x + dx, unknown_key.y + dy, unknown_key.z + dz};
+                if (coarse_cell_state(nb) == CoarseCellState::FREE) return true; // Adjacent to observed free space = could be observed
+            }
+        }
+    }
+
+    return false; // isolated in occupied space
+}
+
+std::vector<VoxelKey> SpatialHash::get_frontier_cells() const {
+    std::vector<VoxelKey> result;
+    for (const auto& [coarse_key, state] : coarse_state_) {
+        if (state == CoarseCellState::OCCUPIED && is_frontier_coarse(coarse_key)) {
+            result.push_back(coarse_key);
+        }
+    }
+
+    return result;
+}
+
+SpatialHash::CoarseGridStats SpatialHash::get_coarse_grid_stats() const {
+    CoarseGridStats stats;
+    for (const auto& [key, state] : coarse_state_) {
+        switch (state) {
+        case CoarseCellState::FREE:
+            stats.num_free++;
+            break;
+        case CoarseCellState::OCCUPIED:
+            stats.num_occupied++;
+            if (is_frontier_coarse(key)) {
+                stats.num_frontiers++;
+            }
+        default:
+            break;
+        }
+    }
+    return stats;
+}
+
 } // namespace
