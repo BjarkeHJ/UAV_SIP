@@ -216,6 +216,8 @@ VoxelKeySet CoverageTracker::map_frontiers() const {
                     if (!voxel_opt || !voxel_opt->get().has_valid_surfel()) continue;
                     if (voxel_opt->get().surfel().mean().z() < config_.collision.safety_margin) continue;
 
+                    // result.insert(fine_key); // found frontier surfel in map
+
                     if (is_map_frontier_surfel(fine_key)) {
                         result.insert(fine_key); // found frontier surfel in map
                     }

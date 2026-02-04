@@ -684,11 +684,11 @@ void InspectionPlannerNode::publish_pcd_coverage() {
             *iter_g = 255;
             *iter_b = 0;
         }
-        // else if (coverage_frontier_set.count(surfel.key()) > 0) {
-        //     *iter_r = 255;
-        //     *iter_g = 0;
-        //     *iter_b = 255;
-        // }
+        else if (coverage_frontier_set.count(surfel.key()) > 0) {
+            *iter_r = 255;
+            *iter_g = 0;
+            *iter_b = 255;
+        }
         // else {
         //     *iter_r = 10;
         //     *iter_g = 10;
