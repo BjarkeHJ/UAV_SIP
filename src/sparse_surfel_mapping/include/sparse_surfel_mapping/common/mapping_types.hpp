@@ -69,7 +69,8 @@ struct PreprocessConfig {
 };
 
 struct SurfelConfig {
-    size_t min_points_for_validity{50};
+    float voxel_size{0.1f};
+
     float planarity_threshold{0.1f}; // 0.01
     float scale_threshold{0.01f};
     float degeneracy_threshold{0.1f};
@@ -110,7 +111,7 @@ struct MapStatistics {
 /* Constants */
 namespace constants {
     constexpr float EPSILON = 1e-6f;
-    constexpr float MAX_EVAL = 5.0f;
+    constexpr float MAX_EVAL = 1.0f;
 };
 
 

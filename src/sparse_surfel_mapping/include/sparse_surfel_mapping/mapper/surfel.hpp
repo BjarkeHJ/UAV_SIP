@@ -26,8 +26,6 @@ public:
 
     bool needs_eigen_update() const { return eigen_dirty_; }
     bool is_valid() const { return is_valid_; }
-    bool is_planar() const;
-    bool is_degenerate() const;
 
     // Accessors
     const Eigen::Vector3f& mean() const { return mean_; }
@@ -75,9 +73,7 @@ private:
 
     // Surfel Configuration
     SurfelConfig config_;
-
 };
-
 
 } // namspace sparse_surfel_map
 

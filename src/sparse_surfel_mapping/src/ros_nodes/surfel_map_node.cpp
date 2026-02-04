@@ -73,10 +73,9 @@ void SurfelMapNode::declare_parameters() {
     this->declare_parameter("initial_bucket_count", 10000);
 
     // Surfel
-    this->declare_parameter("min_points_per_surfel", 50);
     this->declare_parameter("planarity_threshold", 0.01);
     this->declare_parameter("scale_threshold", 0.01);
-    this->declare_parameter("degeneracy_threshold", 0.1);
+    this->declare_parameter("degeneracy_threshold", 0.5);
 
     // Visualization
     this->declare_parameter("publish_rate", 2.0);
@@ -124,7 +123,6 @@ SurfelMapConfig SurfelMapNode::load_configuration() {
     config.debug_output = this->get_parameter("debug_out").as_bool();
     
     // surfel
-    config.surfel_config.min_points_for_validity = static_cast<size_t>(this->get_parameter("min_points_per_surfel").as_int());
     config.surfel_config.planarity_threshold = this->get_parameter("planarity_threshold").as_double();
     config.surfel_config.scale_threshold = this->get_parameter("scale_threshold").as_double();
     config.surfel_config.degeneracy_threshold = this->get_parameter("degeneracy_threshold").as_double();

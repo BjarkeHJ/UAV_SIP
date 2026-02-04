@@ -51,12 +51,6 @@ void Surfel::integrate_points(const std::vector<PointWithNormal>& points) {
 }
 
 void Surfel::recompute_normal() {
-    // gated by effective sample size
-    if (effective_samples() < 5.0f) {
-        is_valid_ = false;
-        return;
-    }
-
     // eigen decomp
     compute_eigen_decomp();
 
@@ -101,32 +95,17 @@ void Surfel::compute_eigen_decomp() {
 }
 
 void Surfel::update_validity() {
-    // at least two non-zero eigenvalues
-    int non_zero_count = 0;
-    for (int i = 0; i < 3; ++i) {
-        if (eigenvalues_(i) > constants::EPSILON) non_zero_count++;
-        if (eigenvalues_(i) > constants::MAX_EVAL) {
-            is_valid_ = false;
-            return;
-        }
-    }
-    if (non_zero_count < 2) {
-        is_valid_ = false;
-        return;
-    }
+    is_valid_ = false;
 
-    if (eigenvalues_(1) > constants::EPSILON) {
-        const float ratio = eigenvalues_(0) / eigenvalues_(1); // smallest / middle: close to 1 -> not planar!
-        if (ratio >= config_.planarity_threshold * config_.max_eigenvalue_ratio) {
-            is_valid_ = false;
-            return;
-        }
-    }
+    // Gate by effective samples (measurement weights)
+    if (effective_samples() < 5.0f) return;
 
-    if (is_degenerate()) {
-        is_valid_ = false;
-    }
-    
+    // Reject very large eigenvalues 
+    if (eigenvalues_(2) > 2.0f * config_.voxel_size * config_.voxel_size) return;
+
+    // Gate degeneracy
+    if (eigenvalues_(1) < config_.degeneracy_threshold * eigenvalues_(2)) return;
+
     is_valid_ = true;
 }
 
@@ -138,7 +117,9 @@ float Surfel::confidence() const {
     float ess = effective_samples();
     if (ess < 10.0f) return 0.0f;
     float c = 1.0f - std::exp(-ess / 50.0f);
-    c *= std::clamp(1.0f - eigenvalues_(0) / (eigenvalues_(1) + 1e-6f), 0.0f, 1.0f); // multiply be planarity;
+    // float c = 1.0f;
+    float planarity = std::clamp(1.0f - eigenvalues_(0) / (eigenvalues_(1) + 1e-6f), 0.0f, 1.0f);
+    c *= planarity; // multiply be planarity;
     return c;
 }
 
@@ -148,25 +129,12 @@ float Surfel::observability(const Eigen::Vector3f& view_dir) const {
     return res;
 }
 
-bool Surfel::is_planar() const {
-    if (eigen_dirty_ || eigenvalues_(1) < constants::EPSILON) {
-        return false;
-    }
-    return eigenvalues_(0) < config_.planarity_threshold * eigenvalues_(1);
-}
-
-bool Surfel::is_degenerate() const {
-    if (eigen_dirty_) return true;
-    return eigenvalues_(1) < config_.degeneracy_threshold * eigenvalues_(2); // lambda_1 very small compared to lambda_2
-}
-
 Eigen::Matrix3f Surfel::normalized_covariance() const {
     if (sum_weights_ > 1.0f) {
         return covariance_ / (sum_weights_ - 1.0f);
     }
     return covariance_;
 }
-
 
 void Surfel::reset() {
     mean_.setZero();
