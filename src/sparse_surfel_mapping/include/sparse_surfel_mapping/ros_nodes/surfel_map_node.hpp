@@ -30,7 +30,6 @@ private:
     void pointcloud_callback(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
     void republish_cloud(const std::vector<PointWithNormal>& points, const rclcpp::Time& stamp);
     void publish_visualization();
-
     bool get_transform(const rclcpp::Time& stamp, Eigen::Transform<float, 3, Eigen::Isometry>& tf);
 
     // map

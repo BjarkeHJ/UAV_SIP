@@ -275,10 +275,9 @@ void SurfelMapNode::republish_cloud(const std::vector<PointWithNormal>& points, 
         *iter_y = pn.position.y();
         *iter_z = pn.position.z();
 
-        *iter_r = static_cast<uint8_t>(255 * pn.weight); // weight is [0 : 1]
-        *iter_g = 0;
+        *iter_r = 0;
+        *iter_g = static_cast<uint8_t>(255 * pn.weight); // weight is [0 : 1]
         *iter_b = static_cast<uint8_t>(255.0f * (1.0f - pn.weight));
-
 
         ++iter_x;
         ++iter_y;

@@ -22,12 +22,13 @@ Surfel::Surfel(const SurfelConfig& config) : Surfel() {
 }
 
 void Surfel::integrate_point(const Eigen::Vector3f& point, const Eigen::Vector3f& normal, float weight) {
-    if (weight <= 0.1f) {
+    if (weight <= 0.05f) {
         return;
     }
 
     count_++;
     sum_weights_ += weight;
+    sum_weights_sq_ += weight * weight;
 
     const Eigen::Vector3f delta = point - mean_;
     mean_ += (weight / sum_weights_) * delta;
@@ -49,21 +50,9 @@ void Surfel::integrate_points(const std::vector<PointWithNormal>& points) {
     }
 }
 
-void Surfel::reset() {
-    mean_.setZero();
-    covariance_.setZero();
-    count_ = 0;
-    sum_weights_ = 0.0f;
-    normal_.setZero();
-    eigenvalues_.setZero();
-    eigenvectors_.setZero();
-    is_valid_ = false;
-    eigen_dirty_ = true;
-}
-
 void Surfel::recompute_normal() {
-    // if (count_ < config_.min_points_for_validity || sum_weights_ < constants::EPSILON) {
-    if (count_ < config_.min_points_for_validity || sum_weights_ < 100.0f) {
+    // gated by effective sample size
+    if (effective_samples() < 5.0f) {
         is_valid_ = false;
         return;
     }
@@ -112,11 +101,6 @@ void Surfel::compute_eigen_decomp() {
 }
 
 void Surfel::update_validity() {
-    if (count_ < config_.min_points_for_validity) {
-        is_valid_ = false;
-        return;
-    }
-
     // at least two non-zero eigenvalues
     int non_zero_count = 0;
     for (int i = 0; i < 3; ++i) {
@@ -146,6 +130,24 @@ void Surfel::update_validity() {
     is_valid_ = true;
 }
 
+float Surfel::effective_samples() const {
+    return (sum_weights_ * sum_weights_) / (sum_weights_sq_ + 1e-6f);
+}
+
+float Surfel::confidence() const {
+    float ess = effective_samples();
+    if (ess < 10.0f) return 0.0f;
+    float c = 1.0f - std::exp(-ess / 50.0f);
+    c *= std::clamp(1.0f - eigenvalues_(0) / (eigenvalues_(1) + 1e-6f), 0.0f, 1.0f); // multiply be planarity;
+    return c;
+}
+
+float Surfel::observability(const Eigen::Vector3f& view_dir) const {
+    float dot = normal_.dot(-view_dir);
+    float res = eigenvalues_(1) * eigenvalues_(2) * (dot * dot); // visibility score: eigenvalue product is proportional to surfel area
+    return res;
+}
+
 bool Surfel::is_planar() const {
     if (eigen_dirty_ || eigenvalues_(1) < constants::EPSILON) {
         return false;
@@ -163,6 +165,19 @@ Eigen::Matrix3f Surfel::normalized_covariance() const {
         return covariance_ / (sum_weights_ - 1.0f);
     }
     return covariance_;
+}
+
+
+void Surfel::reset() {
+    mean_.setZero();
+    covariance_.setZero();
+    count_ = 0;
+    sum_weights_ = 0.0f;
+    normal_.setZero();
+    eigenvalues_.setZero();
+    eigenvectors_.setZero();
+    is_valid_ = false;
+    eigen_dirty_ = true;
 }
 
 }

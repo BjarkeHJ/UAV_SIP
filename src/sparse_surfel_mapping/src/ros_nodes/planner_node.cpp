@@ -658,7 +658,8 @@ void InspectionPlannerNode::publish_pcd_coverage() {
     for (const auto& sref : surfels) {
         const Surfel& surfel = sref.get();
         const Eigen::Vector3f smean = surfel.mean();
-        float su = 1.0f - std::exp(-surfel.sum_weights() / 300.0f);
+        float conf = surfel.confidence();
+        // float su = 1.0f - std::exp(-surfel.sum_weights() / 300.0f);
         // float su = std::clamp(surfel.eigenvalues().minCoeff() / umax, 0.0f, 1.0f);
 
         *iter_x = smean.x();
@@ -666,9 +667,9 @@ void InspectionPlannerNode::publish_pcd_coverage() {
         *iter_z = smean.z();
 
         // color according to uncertainty
-        *iter_r = static_cast<uint8_t>(255.0f * su);
+        *iter_r = static_cast<uint8_t>(255.0f * conf);
         *iter_g = 0;
-        *iter_b = static_cast<uint8_t>(255.0f * (1.0f - su));
+        *iter_b = static_cast<uint8_t>(255.0f * (1.0f - conf));
 
         // color according to map frontier, observed, frontier, not-covered
         if (map_frontier_set.count(surfel.key()) > 0) {

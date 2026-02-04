@@ -43,8 +43,6 @@ private:
     void smooth_range_image();
     void estimate_normals();
 
-    void compute_measurement_weight(PointWithNormal& pn, float sin_theta);
-
     // Eigen::Transform<float, 3, Eigen::Isometry> tf_;
     Eigen::Vector3f gnd_normal_z_{Eigen::Vector3f::Zero()};
     float gnd_offset_z_{0.0f};

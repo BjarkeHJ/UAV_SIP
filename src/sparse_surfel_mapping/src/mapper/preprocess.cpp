@@ -302,41 +302,51 @@ void ScanPreprocess::estimate_normals() {
             }
 
             Eigen::Vector3f normal = tangent_u.cross(tangent_v);
-            const float norm = normal.norm();
-            if (norm < 1e-6f) {
+            const float normal_norm = normal.norm();
+            if (normal_norm < 1e-6f) {
                 continue;
             }
 
-            normal /= norm;
+            normal /= normal_norm;
 
             if (config_.orient_towards_sensor && normal.dot(Pc) > 0.0f) {
                 normal = -normal;
             }
-
-            const float sin_theta = norm / (tangent_u.norm() * tangent_v.norm()); // sin theta from cross product |tu x tv| / (|tu| |tv|) 
-
+ 
             // create point w normal
             PointWithNormal pn;
             pn.position = Pc;
             pn.normal = normal;
-            pn.weight = 0.0f; // TODO
-            compute_measurement_weight(pn, sin_theta);
+            pn.weight = 0.0f;
+
+            // Compute weight for point
+            // Range weighting
+            const float range = pn.position.norm();
+            const float alpha = 1.0f / (config_.max_range * config_.max_range);
+            float w_range = 1.0f / (1.0f + alpha * range * range); // measurement at max_range -> w_range = 0.5
+            // w_range = 1.0f;
+
+            // Incidence angle based on esimtated normal
+            Eigen::Vector3f view_dir = pn.position.normalized();
+            float cos_inc = std::abs(pn.normal.dot(-view_dir));
+            float w_incidence = std::pow(cos_inc, 0.5f);
+            // float w_incidence = std::clamp(cos_inc, 0.5f, 1.0f);
+            // w_incidence = 1.0f;
+
+            // Surface normal quality
+            const float un = tangent_u.norm();
+            const float vn = tangent_v.norm();
+            const float q_anis = 2.0f * std::min(un, vn) / (un + vn + 1e-6f); // anisotropic measure
+            const float sin_theta = normal_norm / (tangent_u.norm() * tangent_v.norm()); // sin_theta from cross product ||tu x tv|| / (||tu||*||tv||)
+            float w_quality = sin_theta * q_anis;
+            // w_quality = 1.0f;
+
+            // final weight
+            pn.weight = w_range * w_incidence * w_quality;
+
             points_with_normal_out_.push_back(pn);
         }
     }
-}
-
-void ScanPreprocess::compute_measurement_weight(PointWithNormal& pn, float sin_theta) {
-    float range = pn.position.norm();
-    const float alpha = 1.0f / (config_.max_range * config_.max_range); // 1/max_range²
-    float w_range = 1.0f / (1.0f + alpha * range * range); // at max sensor range -> w_range = 0.5
-
-    Eigen::Vector3f view_dir = pn.position.normalized(); // sensor -> point
-    float cos_i = std::abs(pn.normal.dot(-view_dir)); // alignment between point estimated normal and view-direction
-    float w_incidence = std::clamp(std::pow(cos_i, 2.0f), 0.5f, 1.0f);
-
-    float w_condition = std::clamp(sin_theta, 0.0f, 1.0f);
-    pn.weight = w_range * w_incidence * w_condition;
 }
 
 } // namespace

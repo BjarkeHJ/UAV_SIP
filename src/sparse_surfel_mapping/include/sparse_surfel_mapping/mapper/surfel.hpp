@@ -36,8 +36,12 @@ public:
     Eigen::Matrix3f normalized_covariance() const;
     const Eigen::Vector3f eigenvalues() const { return eigenvalues_; }
     const Eigen::Matrix3f eigenvectors() const { return eigenvectors_; }
+
     size_t point_count() const { return count_; }
+    float confidence() const;
     float sum_weights() const { return sum_weights_; }
+    float effective_samples() const;    
+    float observability(const Eigen::Vector3f& view_dir) const; // view dir is camera sensor forward in global frame
 
     const VoxelKey& key() const { return key_; }
     void set_key(const VoxelKey& key) { key_ = key; }
@@ -45,7 +49,6 @@ public:
     void set_config(const SurfelConfig& config) { config_ = config; }
     const SurfelConfig& get_config() const { return config_; }
     
-
 private:
     void compute_eigen_decomp();
     void update_validity();
@@ -55,6 +58,7 @@ private:
     Eigen::Matrix3f covariance_{Eigen::Matrix3f::Zero()};
     size_t count_{0};
     float sum_weights_{0.0f};
+    float sum_weights_sq_{0.0f};
     
     // Derived quantities
     Eigen::Vector3f normal_{Eigen::Vector3f::Zero()};
