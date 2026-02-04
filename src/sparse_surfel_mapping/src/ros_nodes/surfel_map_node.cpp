@@ -31,6 +31,8 @@ SurfelMapNode::SurfelMapNode(const rclcpp::NodeOptions& options) : Node("surfel_
         );
     }
 
+    cloud_repub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/surfel_map/points_weighted", 10);
+
     cloud_in_ = std::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
 
     RCLCPP_INFO(this->get_logger(), "SurfelMap node initialized");
@@ -132,7 +134,6 @@ SurfelMapConfig SurfelMapNode::load_configuration() {
 }
 
 void SurfelMapNode::pointcloud_callback(const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
-
     // Capture transform 
     Eigen::Transform<float, 3, Eigen::Isometry> tf;
     if (!get_transform(msg->header.stamp, tf)) {
@@ -142,13 +143,14 @@ void SurfelMapNode::pointcloud_callback(const sensor_msgs::msg::PointCloud2::Sha
     }
 
     pcl::fromROSMsg(*msg, *cloud_in_);
-    
-
     std::vector<PointWithNormal> pns;
     preproc_->set_transform(tf);
     if (!preproc_->set_input_cloud(cloud_in_)) return; 
     preproc_->process();
     preproc_->get_points_with_normal(pns);    
+
+    // republish weighted point
+    republish_cloud(pns, msg->header.stamp);
 
     // lock map with map mutex - unique_lock blocks other writers AND readers of the shared object
     std::unique_lock lock(surfel_map_->mutex_);
@@ -171,6 +173,8 @@ bool SurfelMapNode::get_transform(const rclcpp::Time& stamp, Eigen::Transform<fl
 }
 
 void SurfelMapNode::publish_visualization() {
+    if (surfel_marker_pub_->get_subscription_count() == 0) return;
+
     visualization_msgs::msg::MarkerArray marker_array;
 
     const auto& surfels = surfel_map_->get_valid_surfels();
@@ -242,6 +246,49 @@ void SurfelMapNode::publish_visualization() {
     }
 
     surfel_marker_pub_->publish(marker_array);
+}
+
+void SurfelMapNode::republish_cloud(const std::vector<PointWithNormal>& points, const rclcpp::Time& stamp) {
+    if (points.empty()) return;
+
+    sensor_msgs::msg::PointCloud2 cloud_msg;
+    cloud_msg.header.frame_id = sensor_frame_;
+    cloud_msg.header.stamp = stamp;
+
+    cloud_msg.height = 1;
+    cloud_msg.width = points.size();
+    cloud_msg.is_dense = true;
+    cloud_msg.is_bigendian = false;
+
+    sensor_msgs::PointCloud2Modifier modifier(cloud_msg);
+    modifier.setPointCloud2FieldsByString(2, "xyz", "rgb");
+
+    sensor_msgs::PointCloud2Iterator<float> iter_x(cloud_msg, "x");
+    sensor_msgs::PointCloud2Iterator<float> iter_y(cloud_msg, "y");
+    sensor_msgs::PointCloud2Iterator<float> iter_z(cloud_msg, "z");
+    sensor_msgs::PointCloud2Iterator<uint8_t> iter_r(cloud_msg, "r");
+    sensor_msgs::PointCloud2Iterator<uint8_t> iter_g(cloud_msg, "g");
+    sensor_msgs::PointCloud2Iterator<uint8_t> iter_b(cloud_msg, "b");
+
+    for (const auto& pn : points) {
+        *iter_x = pn.position.x();
+        *iter_y = pn.position.y();
+        *iter_z = pn.position.z();
+
+        *iter_r = static_cast<uint8_t>(255 * pn.weight); // weight is [0 : 1]
+        *iter_g = 0;
+        *iter_b = static_cast<uint8_t>(255.0f * (1.0f - pn.weight));
+
+
+        ++iter_x;
+        ++iter_y;
+        ++iter_z;
+        ++iter_r;
+        ++iter_g;
+        ++iter_b;
+    }
+
+    cloud_repub_->publish(cloud_msg);
 }
 
 } // namespace

@@ -3,6 +3,7 @@
 
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
+#include <sensor_msgs/point_cloud2_iterator.hpp>
 #include <visualization_msgs/msg/marker_array.hpp>
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
@@ -27,8 +28,8 @@ private:
     SurfelMapConfig load_configuration();
 
     void pointcloud_callback(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
+    void republish_cloud(const std::vector<PointWithNormal>& points, const rclcpp::Time& stamp);
     void publish_visualization();
-    void publish_statistics();
 
     bool get_transform(const rclcpp::Time& stamp, Eigen::Transform<float, 3, Eigen::Isometry>& tf);
 
@@ -41,6 +42,7 @@ private:
     std::unique_ptr<tf2_ros::TransformListener> tf_listener_;
 
     // pubs
+    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr cloud_repub_;
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr surfel_marker_pub_;
 
     // subs

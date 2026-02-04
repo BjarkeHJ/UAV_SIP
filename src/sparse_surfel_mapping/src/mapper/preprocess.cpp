@@ -328,12 +328,12 @@ void ScanPreprocess::estimate_normals() {
 
 void ScanPreprocess::compute_measurement_weight(PointWithNormal& pn, float sin_theta) {
     float range = pn.position.norm();
-    const float alpha = 1.0f / config_.max_range;
-    float w_range = 1.0f / (1.0f + alpha * range * range);
+    const float alpha = 1.0f / (config_.max_range * config_.max_range); // 1/max_range²
+    float w_range = 1.0f / (1.0f + alpha * range * range); // at max sensor range -> w_range = 0.5
 
     Eigen::Vector3f view_dir = pn.position.normalized(); // sensor -> point
-    float cos_i = std::abs(pn.normal.dot(-view_dir));
-    float w_incidence = std::pow(cos_i, 1.0f);
+    float cos_i = std::abs(pn.normal.dot(-view_dir)); // alignment between point estimated normal and view-direction
+    float w_incidence = std::clamp(std::pow(cos_i, 2.0f), 0.5f, 1.0f);
 
     float w_condition = std::clamp(sin_theta, 0.0f, 1.0f);
     pn.weight = w_range * w_incidence * w_condition;
