@@ -12,7 +12,6 @@ Surfel::Surfel()
     , eigenvalues_(Eigen::Vector3f::Zero())
     , eigenvectors_(Eigen::Matrix3f::Zero())
     , is_valid_(false)
-    , eigen_dirty_(true)
     , config_()
 {
 }
@@ -40,8 +39,6 @@ void Surfel::integrate_point(const Eigen::Vector3f& point, const Eigen::Vector3f
     // Track measurement normal (for surface orientation)
     const Eigen::Vector3f n_delta = normal - avg_measurement_normal_;
     avg_measurement_normal_ += (weight / sum_weights_) * n_delta;
-
-    eigen_dirty_ = true;
 }
 
 void Surfel::integrate_points(const std::vector<PointWithNormal>& points) {
@@ -61,7 +58,6 @@ void Surfel::recompute_normal() {
 
     // check validity of surfel
     update_validity();
-    eigen_dirty_ = false;
 }
 
 void Surfel::compute_eigen_decomp() {
@@ -116,17 +112,31 @@ float Surfel::effective_samples() const {
 float Surfel::confidence() const {
     float ess = effective_samples();
     if (ess < 10.0f) return 0.0f;
-    float c = 1.0f - std::exp(-ess / 50.0f);
+    float c = 1.0f - std::exp(-ess / 25.0f);
     // float c = 1.0f;
     float planarity = std::clamp(1.0f - eigenvalues_(0) / (eigenvalues_(1) + 1e-6f), 0.0f, 1.0f);
     c *= planarity; // multiply be planarity;
     return c;
 }
 
-float Surfel::observability(const Eigen::Vector3f& view_dir) const {
-    float dot = normal_.dot(-view_dir);
-    float res = eigenvalues_(1) * eigenvalues_(2) * (dot * dot); // visibility score: eigenvalue product is proportional to surfel area
-    return res;
+float Surfel::observability(const Eigen::Vector3f& camera_pos, float opt_dist) const {
+    // float dot = normal_.dot(-view_dir);
+
+    Eigen::Vector3f to_camera = camera_pos - mean_;
+    float dist = to_camera.norm();
+    Eigen::Vector3f view_dir = to_camera / dist;
+    float cos_angle = normal_.dot(view_dir);
+    if (cos_angle <= 0.0f) return 0.0f; // back facing
+
+    float dist_ratio = 1.0f;
+    if (opt_dist > 0.0f) {
+        dist_ratio = dist / opt_dist;
+    }
+    float w_distance = std::exp(-0.5f * std::pow(dist_ratio - 1.0f, 2) / 0.3f);
+    float w_angle = cos_angle;
+    float w_surfel = confidence();
+        
+    return w_distance * w_angle * w_surfel;
 }
 
 Eigen::Matrix3f Surfel::normalized_covariance() const {
@@ -145,7 +155,6 @@ void Surfel::reset() {
     eigenvalues_.setZero();
     eigenvectors_.setZero();
     is_valid_ = false;
-    eigen_dirty_ = true;
 }
 
 }

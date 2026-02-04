@@ -23,8 +23,6 @@ public:
     void integrate_points(const std::vector<PointWithNormal>& points);
     void reset();
     void recompute_normal();
-
-    bool needs_eigen_update() const { return eigen_dirty_; }
     bool is_valid() const { return is_valid_; }
 
     // Accessors
@@ -39,7 +37,7 @@ public:
     float confidence() const;
     float sum_weights() const { return sum_weights_; }
     float effective_samples() const;    
-    float observability(const Eigen::Vector3f& view_dir) const; // view dir is camera sensor forward in global frame
+    float observability(const Eigen::Vector3f& view_dir, float opt_dist = 0.0f) const; // view dir is camera sensor forward in global frame
 
     const VoxelKey& key() const { return key_; }
     void set_key(const VoxelKey& key) { key_ = key; }
@@ -68,7 +66,6 @@ private:
 
     // State flags
     bool is_valid_{false};
-    bool eigen_dirty_{true};
     VoxelKey key_;
 
     // Surfel Configuration
