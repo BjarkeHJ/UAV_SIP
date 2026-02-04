@@ -37,7 +37,7 @@ public:
     float confidence() const;
     float sum_weights() const { return sum_weights_; }
     float effective_samples() const;    
-    float observability(const Eigen::Vector3f& view_dir, float opt_dist = 0.0f) const; // view dir is camera sensor forward in global frame
+    float observability(const Eigen::Vector3f& camera_pos, float opt_dist = 0.0f) const; // view dir is camera sensor forward in global frame
 
     const VoxelKey& key() const { return key_; }
     void set_key(const VoxelKey& key) { key_ = key; }
