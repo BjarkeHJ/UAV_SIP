@@ -36,10 +36,15 @@ void CoverageTracker::record_visited_viewpoint(const Viewpoint& viewpoint) {
 
     // Re-evaluate previous viewpoint coverage
     if (visited_viewpoints_.size() > 0) {
-        ViewpointState& prev_vp_state = visited_viewpoints_.front();
-        Viewpoint prev_vp(prev_vp_state.position, prev_vp_state.yaw, config_.camera);
-        prev_vp.compute_visibility(*map_, true);
-        mark_observed(prev_vp.visible_voxels(), 0);
+        for (auto& vp : visited_viewpoints_) {
+            Viewpoint prev_vp(vp.position, vp.yaw, config_.camera);
+            prev_vp.compute_visibility(*map_, true);
+            mark_observed(prev_vp.visible_voxels(), 0);    
+        }
+        // ViewpointState& prev_vp_state = visited_viewpoints_.front();
+        // Viewpoint prev_vp(prev_vp_state.position, prev_vp_state.yaw, config_.camera);
+        // prev_vp.compute_visibility(*map_, true);
+        // mark_observed(prev_vp.visible_voxels(), 0);
     }
 
     // Log visited viewpoints
