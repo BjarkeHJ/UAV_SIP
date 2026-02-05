@@ -317,6 +317,7 @@ void SpatialHash::trace_ray(const Eigen::Vector3f& from, const Eigen::Vector3f& 
 
         if (coarse != prev_coarse) {
             if (coarse_cell_state(coarse) == CoarseCellState::OCCUPIED) {
+                mark_coarse_occupied(coarse);
                 hit = true;
                 continue;
             }
@@ -326,6 +327,7 @@ void SpatialHash::trace_ray(const Eigen::Vector3f& from, const Eigen::Vector3f& 
             if (hit) {
                 coarse_state_.erase(coarse); // mark UNKNOWN after occulision
                 coarse_surfel_counts_.erase(coarse);
+                hit = false;
             }
             else {
                 mark_coarse_free(coarse);

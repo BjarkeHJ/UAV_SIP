@@ -22,7 +22,7 @@ void CoverageTracker::mark_observed(const VoxelKeySet& voxels, uint64_t viewpoin
     }
 
     // Update frontier set
-    compute_full_frontier_set();
+    // compute_full_frontier_set();
     // if (is_first_observation) compute_full_frontier_set(); // full if first
     // else update_frontier_set(coverage_frontiers_, voxels, observed_surfels_, *map_); // incremental ...
 
@@ -176,6 +176,7 @@ bool CoverageTracker::is_map_frontier_surfel(const VoxelKey& key) const {
 
     auto voxel_opt = map_->get_voxel(key);
     if (!voxel_opt || !voxel_opt->get().has_valid_surfel()) return false;
+    if (observation_counts_.count(key) > 0) return false;
 
     size_t nb_count = 0;
     for (int dx = -1; dx <= 1; ++dx) {

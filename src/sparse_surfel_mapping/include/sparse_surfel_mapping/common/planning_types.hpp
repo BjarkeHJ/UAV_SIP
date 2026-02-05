@@ -31,7 +31,7 @@ struct CollisionConfig {
 
 struct ViewpointConfig {
     // Viewpoint Geometry
-    float optimal_view_distance{1.0f};
+    float optimal_view_distance{1.0f};  // standoff distance for inspection
     float min_view_distance{0.8f};
     float max_view_distance{1.5f};
 
@@ -56,7 +56,7 @@ struct InspectionPlannerConfig {
     RRTConfig rrt;
 
     // Planning strategy
-    size_t max_viewpoints_in_plan{1};
+    size_t max_viewpoints_in_plan{10};
 
     // Viewpoint Ordering
     size_t two_opt_iterations{100};
@@ -117,6 +117,25 @@ struct FrustumPlanes {
     }
 };
 
+
+// Frontier Clustering
+struct FrontierCluster {
+    Eigen::Vector3f centroid{Eigen::Vector3f::Zero()};
+    Eigen::Vector3f avg_normal{Eigen::Vector3f::Zero()};
+    Eigen::Vector3f direction_from_drone{Eigen::Vector3f::Zero()};
+    std::vector<VoxelKey> members;
+    float score{0.0f};
+    size_t size() const { return members.size(); }
+};
+
+struct ExplorationGoal {
+    Eigen::Vector3f position{Eigen::Vector3f::Zero()};
+    Eigen::Vector3f direction{Eigen::Vector3f::Zero()};  // unit vector from drone to goal
+    float yaw{0.0f};
+    bool is_valid{false};
+    Eigen::Vector3f last_centroid{Eigen::Vector3f::Zero()};
+    float distance_to_drone{std::numeric_limits<float>::max()};
+};
 
 // Statistics
 struct PlanningStatistics {

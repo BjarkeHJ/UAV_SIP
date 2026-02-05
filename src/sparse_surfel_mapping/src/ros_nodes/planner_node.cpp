@@ -229,7 +229,7 @@ void InspectionPlannerNode::send_path_goal() {
     last_completed_viewpoint_idx_ = -1; // reset viewpoint tracking
 
     if (!planner_->viewpoints().empty()) {
-        last_sent_first_vp_id_ = planner_->viewpoints().front().id();
+        last_sent_first_vp_id_ = planner_->viewpoints().front().id;
     }
 
     auto send_goal_options = rclcpp_action::Client<ExecutePath>::SendGoalOptions();
@@ -390,7 +390,7 @@ bool InspectionPlannerNode::should_send_new_path() const {
     
     // Check if path has changed
     if (!planner_->viewpoints().empty()) {
-        uint64_t current_firts_id = planner_->viewpoints().front().id();
+        uint64_t current_firts_id = planner_->viewpoints().front().id;
         if (current_firts_id != last_sent_first_vp_id_) {
             return true;
         }
@@ -607,12 +607,12 @@ void InspectionPlannerNode::publish_cands() {
 
     for (const auto& c : cands) {
         geometry_msgs::msg::Pose p;
-        p.position.x = c.position().x();
-        p.position.y = c.position().y();
-        p.position.z = c.position().z();
+        p.position.x = c.position.x();
+        p.position.y = c.position.y();
+        p.position.z = c.position.z();
 
         tf2::Quaternion q;
-        q.setRPY(0, 0, c.yaw());
+        q.setRPY(0, 0, c.yaw);
         p.orientation = tf2::toMsg(q);
 
         cands_msg.poses.push_back(p);
@@ -651,10 +651,9 @@ void InspectionPlannerNode::publish_pcd_coverage() {
 
     // get keys for observed surfels
     const VoxelKeySet& obs_set = planner_->coverage().observed_surfels();
-    const VoxelKeySet& coverage_frontier_set = planner_->coverage().coverage_frontiers();
+    // const VoxelKeySet& coverage_frontier_set = planner_->coverage().coverage_frontiers();
     const VoxelKeySet map_frontier_set = planner_->coverage().map_frontiers();
 
-    float umax = 0.0001f;
     for (const auto& sref : surfels) {
         const Surfel& surfel = sref.get();
         const Eigen::Vector3f smean = surfel.mean();
@@ -684,11 +683,11 @@ void InspectionPlannerNode::publish_pcd_coverage() {
             *iter_g = 255;
             *iter_b = 0;
         }
-        else if (coverage_frontier_set.count(surfel.key()) > 0) {
-            *iter_r = 255;
-            *iter_g = 0;
-            *iter_b = 255;
-        }
+        // else if (coverage_frontier_set.count(surfel.key()) > 0) {
+        //     *iter_r = 255;
+        //     *iter_g = 0;
+        //     *iter_b = 255;
+        // }
         // else {
         //     *iter_r = 10;
         //     *iter_g = 10;
