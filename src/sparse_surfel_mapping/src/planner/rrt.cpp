@@ -1,78 +1,28 @@
 #include "sparse_surfel_mapping/planner/rrt.hpp"
 #include <algorithm>
 #include <cmath>
+#include <chrono>
+#include <iostream>
 
 namespace sparse_surfel_map {
 
-RRTPlanner::RRTPlanner() : config_() {}
-RRTPlanner::RRTPlanner(const RRTConfig& config) : config_(config) {}
+RRTPlanner::RRTPlanner() : config_(), astar_planner_() {}
+RRTPlanner::RRTPlanner(const RRTConfig& config) : config_(config), astar_planner_() {}
 
 std::vector<Eigen::Vector3f> RRTPlanner::plan(const Eigen::Vector3f& start, const Eigen::Vector3f& goal) {
     if (!map_) return {};
 
-    auto rrt_ts = std::chrono::high_resolution_clock::now();
-    
-    if (is_straight_path_free(start, goal)) {
-        return {start, goal};
+    // Use A* on coarse grid for surface-following paths
+    astar_planner_.set_map(map_);
+
+    auto path = astar_planner_.plan(start, goal);
+
+    // Optionally simplify path (remove redundant waypoints)
+    if (path.size() > 2) {
+        path = simplify_path(path);
     }
 
-    // define the random sample space
-    Eigen::Vector3f min_bound = start.cwiseMin(goal).array() - config_.sample_margin;
-    Eigen::Vector3f max_bound = start.cwiseMax(goal).array() + config_.sample_margin;
-    min_bound.z() = std::max(min_bound.z(), 0.5f); // keep above ground
-
-    // Initialize tree
-    std::vector<Node> tree;
-    tree.reserve(config_.max_iterations);
-    tree.push_back({start, -1});
-
-    std::uniform_real_distribution<float> goal_dist(0.0f, 1.0f);
-    int goal_node = -1;
-
-    for (size_t iter = 0; iter < config_.max_iterations; ++iter) {
-        // sample random point with goal bias
-        Eigen::Vector3f sample_point;
-        if (goal_dist(rng_) < config_.goal_bias) {
-            sample_point = goal; // goal_bias probability of sampling goal (drive towards goal)
-        }
-        else {
-            sample_point = sample(min_bound, max_bound); // 1 - goal_bias probability of random sample within bounds
-        }
-
-        // find nearest node and steer toward sample
-        int nearest_idx = find_nearest(tree, sample_point);
-        Eigen::Vector3f new_pos = steer(tree[nearest_idx].position, sample_point);
-
-        // check if new pos + edge is valid
-        if (!is_collision_free(new_pos)) continue;
-        if (!is_edge_free(tree[nearest_idx].position, new_pos)) continue;
-
-        // add to tree
-        int new_idx = static_cast<int>(tree.size());
-        tree.push_back({new_pos, nearest_idx});
-
-        // check if goal is reached (within one stepsize)
-        float dist_to_goal = (new_pos - goal).norm();
-        if (dist_to_goal <  2.0f * config_.step_size) {
-            // try direct connect
-            if (is_edge_free(new_pos, goal)) {
-                tree.push_back({goal, new_idx});
-                goal_node = static_cast<int>(tree.size()) - 1;
-                break;
-            }
-        }
-    }
-
-    if (goal_node < 0) return {}; // failed to find path
-    
-    // extract, simplify, and return
-    auto path = extract_path(tree, goal_node);
-    auto path_simplified = simplify_path(path);
-
-    auto rrt_te = std::chrono::high_resolution_clock::now();
-    std::cout << "RRT Computation time: " << std::chrono::duration<double, std::milli>(rrt_te - rrt_ts).count() << " ms" << std::endl;
-    
-    return path_simplified;
+    return path;
 }
 
 std::vector<Eigen::Vector3f> RRTPlanner::extract_path(const std::vector<Node>& tree, int goal_idx) const {

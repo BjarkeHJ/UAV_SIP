@@ -6,6 +6,7 @@
 #include <Eigen/Core>
 #include "sparse_surfel_mapping/common/planning_types.hpp"
 #include "sparse_surfel_mapping/mapper/surfel_map.hpp"
+#include "sparse_surfel_mapping/planner/a_star.hpp"
 
 namespace sparse_surfel_map {
 
@@ -41,6 +42,9 @@ private:
     const SurfelMap* map_;
     float collision_radius_{0.7f};
     mutable std::mt19937 rng_{std::random_device{}()};
+
+    // A* planner for coarse grid surface-following paths
+    AStarPlanner astar_planner_;
 };
 
 // Struct for RRT path

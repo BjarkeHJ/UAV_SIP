@@ -11,12 +11,14 @@ namespace sparse_surfel_map {
 
 ViewpointGenerator::ViewpointGenerator()
     : config_()
-    , sphere_radius_(config_.camera.max_range * 1.0f)
+    , astar_planner_()
+    , sphere_radius_(config_.camera.max_range * 1.5f)
 {}
 
 ViewpointGenerator::ViewpointGenerator(const InspectionPlannerConfig& config)
     : config_(config)
-    , sphere_radius_(config_.camera.max_range * 1.0f)
+    , astar_planner_()
+    , sphere_radius_(config_.camera.max_range * 1.5f)
 {}
 
 bool ViewpointGenerator::update_exploration_goal(const Eigen::Vector3f& current_position, const Eigen::Vector3f& current_direction) {
@@ -175,15 +177,21 @@ std::deque<Viewpoint> ViewpointGenerator::generate_exploration_viewpoints(const 
         return viewpoints;
     }
 
-    // TODO: Generate RRT* path from current_position to current_goal_.position
-    // For now, use straight line as placeholder
+    // Generate A* path from current_position to current_goal_.position
+    const auto ta = std::chrono::high_resolution_clock::now();
+    path_to_goal_ = astar_planner_.plan(current_position, current_goal_.position);
+    const auto taa = std::chrono::high_resolution_clock::now();
+    std::cout << "AStar Planning Time: " << std::chrono::duration<double,std::milli>(taa-ta).count() << " ms" << std::endl;
 
-    path_to_goal_.clear();
-    path_to_goal_.push_back(current_position);
-    path_to_goal_.push_back(current_goal_.position);
+
+    // Fallback to straight line if A* fails
+    if (path_to_goal_.empty()) {
+        path_to_goal_.push_back(current_position);
+        path_to_goal_.push_back(current_goal_.position);
+    }
 
     // Sample spheres along path
-    const float overlap_ratio = 0.3f; // 30% overlap
+    const float overlap_ratio = 0.5f; // 30% overlap
 
     const auto ts = std::chrono::high_resolution_clock::now();
     auto sphere_centers = sample_spheres_along_path(path_to_goal_, sphere_radius_, overlap_ratio);
@@ -256,6 +264,7 @@ std::vector<Viewpoint> ViewpointGenerator::generate_viewpoints_in_sphere(const E
 
     // Get surfels in sphere
     const auto& surfels_in_sphere = map_->query_surfels_in_radius(sphere_center, radius);
+    const VoxelKeySet& observed_set = coverage_tracker_->observed_surfels();
     if (surfels_in_sphere.empty()) return {};
 
     // Score surfels by observability (quick filter)
@@ -264,6 +273,8 @@ std::vector<Viewpoint> ViewpointGenerator::generate_viewpoints_in_sphere(const E
 
     for (const auto& s_ref : surfels_in_sphere) {
         const Surfel& s = s_ref.get();
+        if (observed_set.count(s.key()) > 0) continue; // dont consider already covered surfels
+
         float obs_score = s.observability(sphere_center, opt_view_dist);
         if (obs_score < 0.15f) continue;  // Higher threshold for pre-filtering
         scored_surfels.push_back({s.key(), obs_score});
@@ -363,7 +374,7 @@ std::vector<Viewpoint> ViewpointGenerator::generate_viewpoints_from_clusters(con
     const auto t1 = std::chrono::high_resolution_clock::now();
 
     VoxelKeySet covered_surfels;
-    const size_t target_coverage = static_cast<size_t>(0.9f * total_surfels_in_sphere);  // 75% threshold
+    const size_t target_coverage = static_cast<size_t>(0.95f * total_surfels_in_sphere);  // 75% threshold
 
     // Sort clusters by score descending
     std::vector<size_t> cluster_indices(clusters.size());
@@ -424,55 +435,50 @@ std::vector<Viewpoint> ViewpointGenerator::generate_viewpoints_from_clusters(con
     return viewpoints;
 }
 
-bool ViewpointGenerator::adjust_viewpoint_if_obstructed(Viewpoint& vp, const Eigen::Vector3f& target_surfel_pos, const Eigen::Vector3f& target_surfel_normal) {
+bool ViewpointGenerator::adjust_viewpoint_if_obstructed(Viewpoint& vp, const Eigen::Vector3f& target_pos, const Eigen::Vector3f& target_normal) {
     const float radius = config_.collision.inflation_radius();
 
     // Check initial collision
     if (!vp.is_in_collision(*map_, radius)) {
         return true; // already good
     }
-
-    // Surface-repulsive adjustment
+    
     const int max_attempts = 8;
-    const float angle_step = M_PI / 4.0f; // 45° increments
+    const Eigen::Vector3f initial_vp_pos = vp.position();
+    const float initial_vp_yaw = vp.yaw();
 
-    for (int attempt = 0; attempt < max_attempts; ++attempt) {
-        // Move tangentially around the target surfel
-        float angle = attempt * angle_step;
-
-        // Tangent vectors (perpendicular to normal)
-        Eigen::Vector3f tangent1 = target_surfel_normal.cross(Eigen::Vector3f::UnitZ()).normalized();
-        if (tangent1.norm() < 0.1f) { // normal is vertical
-            tangent1 = target_surfel_normal.cross(Eigen::Vector3f::UnitX()).normalized();
+    // First attempt: Move backwards along -vp_forward
+    for (int attempt = 0; attempt < max_attempts; attempt++) {
+        const float dist_to_target = (vp.position() - target_pos).norm();
+        const float move_dist = (config_.viewpoint.max_view_distance - dist_to_target) / max_attempts;
+        if (move_dist <= 0.0f) {
+            // moving too far away - try different approach
+            break;
         }
-
-        Eigen::Vector3f tangent2 = target_surfel_normal.cross(tangent1).normalized();
-
-        // Circular sampling in tangent plane
-        Eigen::Vector3f tangent_offset =
-            std::cos(angle) * tangent1 + std::sin(angle) * tangent2;
-
-        // Try varying distances (grazing angles)
-        for (float dist = 0.8f; dist <= 1.2f; dist += 0.2f) {
-            Eigen::Vector3f new_pos = target_surfel_pos +
-                dist * (target_surfel_normal + 0.3f * tangent_offset).normalized();
-
-            // Update viewpoint
-            vp.set_position(new_pos);
-
-            // Adjust yaw to keep looking at target
-            Eigen::Vector3f to_target = target_surfel_pos - new_pos;
-            float new_yaw = std::atan2(to_target.y(), to_target.x());
-            vp.set_yaw(new_yaw);
-
-            // Check collision
-            if (!vp.is_in_collision(*map_, radius)) {
-                return true; // found collision-free position
-            }
-        }
+        vp.set_position(vp.position() - vp.state().forward_direction() * move_dist);
+        if (!vp.is_in_collision(*map_, radius)) return true;
     }
 
-    return false; // couldn't find collision-free position
+    // Reset vp position if first approach failed
+    vp.set_position(initial_vp_pos);
+
+    // Second attempt: Find closest surface -> vector: vp-to-closest -> is vp-to-closest much different than vp-to-target -> move away from closest -> adjust yaw to target
+    const float dist_to_target = (vp.position() - target_pos).norm();
+    for (int attempt = 0; attempt < max_attempts; ++attempt) {
+        std::pair<Eigen::Vector3f, Eigen::Vector3f> nearest_surface = vp.nearest_surface(*map_, dist_to_target);
+        if (nearest_surface.first == vp.state().position) return true; // target is nearest
+
+        const float nearest_dist = (vp.position() - nearest_surface.first).norm();
+        const Eigen::Vector3f move_dir = ((vp.position() - nearest_surface.first)/nearest_dist + nearest_surface.second) * 0.5f;
+        const float move_dist = (config_.viewpoint.max_view_distance - nearest_dist) / max_attempts;        
+        vp.set_position(vp.position() + move_dir * move_dist);
+        const Eigen::Vector3f new_vp_to_target = target_pos - vp.position();
+        const float new_yaw = std::atan2(new_vp_to_target.y(), new_vp_to_target.x());
+        vp.set_yaw(new_yaw);
+        if (!vp.is_in_collision(*map_, radius)) return true;
+    }
+
+    return false;
 }
 
 bool ViewpointGenerator::is_near_path(const Eigen::Vector3f& point, const std::vector<Eigen::Vector3f>& path, float tolerance) const {

@@ -70,6 +70,7 @@ add_executable(
   src/planner/coverage_tracker.cpp
   src/planner/inspection_planner.cpp
   src/planner/rrt.cpp
+  src/planner/a_star.cpp
 
   src/ros_nodes/surfel_map_node.cpp
   src/ros_nodes/planner_node.cpp

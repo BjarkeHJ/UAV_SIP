@@ -10,6 +10,7 @@
 #include "sparse_surfel_mapping/mapper/surfel_map.hpp"
 #include "sparse_surfel_mapping/planner/viewpoint.hpp"
 #include "sparse_surfel_mapping/planner/coverage_tracker.hpp"
+#include "sparse_surfel_mapping/planner/a_star.hpp"
 
 namespace sparse_surfel_map {
 
@@ -25,7 +26,10 @@ public:
     ViewpointGenerator();
     explicit ViewpointGenerator(const InspectionPlannerConfig& config);
 
-    void set_map(const SurfelMap* map) { map_ = map; }
+    void set_map(const SurfelMap* map) {
+        map_ = map;
+        astar_planner_.set_map(map);
+    }
     void set_coverage_tracker(const CoverageTracker* ct) { coverage_tracker_ = ct; }
 
     // Main interface
@@ -58,13 +62,14 @@ private:
                                                               size_t total_surfels_in_sphere);
 
     // Helpers
-    bool adjust_viewpoint_if_obstructed(Viewpoint& vp, const Eigen::Vector3f& target_surfel_pos, const Eigen::Vector3f& target_surfel_normal);
+    bool adjust_viewpoint_if_obstructed(Viewpoint& vp, const Eigen::Vector3f& target_pos, const Eigen::Vector3f& target_normal);
     bool is_near_path(const Eigen::Vector3f& point, const std::vector<Eigen::Vector3f>& path, float tolerance) const;
     bool is_near_frontier(const VoxelKey& key) const;
 
     InspectionPlannerConfig config_;
     const SurfelMap* map_{nullptr};
     const CoverageTracker* coverage_tracker_{nullptr};
+    AStarPlanner astar_planner_;
 
     // State
     ExplorationGoal current_goal_;

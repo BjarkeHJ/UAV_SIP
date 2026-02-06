@@ -192,7 +192,7 @@ bool CoverageTracker::is_map_frontier_surfel(const VoxelKey& key) const {
         }
     }
 
-    return nb_count < 6; // less than 6 nbs
+    return nb_count < 6 && nb_count > 1; // less than 6 nbs, but have atleast 2
 }
 
 VoxelKeySet CoverageTracker::map_frontiers() const {

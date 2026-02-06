@@ -361,4 +361,35 @@ float Viewpoint::distance_to_nearest_surface(const SurfelMap& map, float max_rad
     return min_dist;
 }
 
+std::pair<Eigen::Vector3f, Eigen::Vector3f> Viewpoint::nearest_surface(const SurfelMap& map, float max_radius) const {
+    if (map.num_valid_surfels() == 0) return {state_.position, state_.forward_direction()};
+
+    const auto& near_surfels = map.query_surfels_in_radius(state_.position, max_radius);
+    if (near_surfels.empty()) return {state_.position, state_.forward_direction()};
+
+    const Eigen::Vector3f& vp_pos = state_.position;
+
+    float nearest_dist = max_radius;
+    VoxelKey nearest_key = map.voxels().point_to_key(state_.position);
+    for (const auto ns_ref : near_surfels) {
+        const Surfel& ns = ns_ref.get();
+        const float dist_to_ns = (ns.mean() - vp_pos).norm();
+        if (dist_to_ns < nearest_dist) {
+            nearest_dist = dist_to_ns;
+            nearest_key = ns.key();
+        }
+    }
+
+    if (nearest_dist == max_radius) {
+        // none found
+        return {state_.position, state_.forward_direction()};
+    }
+
+    // return surfel position and normal
+    const auto& voxel_opt = map.get_voxel(nearest_key);
+    if (!voxel_opt || !voxel_opt->get().has_valid_surfel()) return {state_.position, state_.forward_direction()};
+    const Surfel& s = voxel_opt->get().surfel();
+    return {s.mean(), s.normal()};
+}
+
 } // namespace

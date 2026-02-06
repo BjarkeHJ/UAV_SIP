@@ -44,7 +44,7 @@ struct ViewpointConfig {
 
 struct RRTConfig {
     size_t max_iterations{500};
-    float step_size{0.1f};
+    float step_size{0.3f};  // Larger for faster planning
     float goal_bias{0.1f};
     float sample_margin{25.0f}; // large corridor search (bounded search)
 };
