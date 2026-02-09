@@ -23,7 +23,7 @@ SurfelMapNode::SurfelMapNode(const rclcpp::NodeOptions& options) : Node("surfel_
     );
     
     // Surfel viz
-    surfel_marker_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("surfel_map/markers", 10);
+    map_bbox_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("surfel_map/bounding_box", 10);
     if (publish_rate_ > 0.0) {
         viz_timer_ = this->create_wall_timer(
             std::chrono::duration<double>(1.0 / publish_rate_),
@@ -32,6 +32,7 @@ SurfelMapNode::SurfelMapNode(const rclcpp::NodeOptions& options) : Node("surfel_
     }
 
     cloud_repub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/surfel_map/points_weighted", 10);
+    coarse_map_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/surfel_map/coarse_map", 10);
 
     cloud_in_ = std::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
 
@@ -171,79 +172,127 @@ bool SurfelMapNode::get_transform(const rclcpp::Time& stamp, Eigen::Transform<fl
 }
 
 void SurfelMapNode::publish_visualization() {
-    if (surfel_marker_pub_->get_subscription_count() == 0) return;
-
+    if (map_bbox_pub_->get_subscription_count() == 0) return;
     visualization_msgs::msg::MarkerArray marker_array;
-
-    const auto& surfels = surfel_map_->get_valid_surfels();
-    if (surfels.empty()) return;
-
     auto viz_now = this->get_clock()->now();
+    
+    // const auto& surfels = surfel_map_->get_valid_surfels();
+    // if (surfels.empty()) return;
 
-    // delete previous
-    visualization_msgs::msg::Marker delete_marker;
-    delete_marker.header.frame_id = global_frame_;
-    delete_marker.header.stamp = viz_now;
-    delete_marker.action = visualization_msgs::msg::Marker::DELETEALL;
-    delete_marker.ns = "surfel_ellipses";
-    marker_array.markers.push_back(delete_marker);
+    // // delete previous
+    // visualization_msgs::msg::Marker delete_marker;
+    // delete_marker.header.frame_id = global_frame_;
+    // delete_marker.header.stamp = viz_now;
+    // delete_marker.action = visualization_msgs::msg::Marker::DELETEALL;
+    // delete_marker.ns = "surfel_ellipses";
+    // marker_array.markers.push_back(delete_marker);
 
-    // Surfel Ellipses
-    visualization_msgs::msg::Marker surfel_ellipse;
-    surfel_ellipse.header.frame_id = global_frame_;
-    surfel_ellipse.header.stamp = viz_now;
-    surfel_ellipse.ns = "surfel_ellipses";
-    surfel_ellipse.type = visualization_msgs::msg::Marker::CYLINDER;
-    surfel_ellipse.action = visualization_msgs::msg::Marker::ADD;
+    // // Surfel Ellipses
+    // visualization_msgs::msg::Marker surfel_ellipse;
+    // surfel_ellipse.header.frame_id = global_frame_;
+    // surfel_ellipse.header.stamp = viz_now;
+    // surfel_ellipse.ns = "surfel_ellipses";
+    // surfel_ellipse.type = visualization_msgs::msg::Marker::CYLINDER;
+    // surfel_ellipse.action = visualization_msgs::msg::Marker::ADD;
 
-    int marker_id = 0;
-    for (const auto& surfel_ref : surfels) {
-        const Surfel& surfel = surfel_ref.get();
+    // int marker_id = 0;
+    // for (const auto& surfel_ref : surfels) {
+    //     const Surfel& surfel = surfel_ref.get();
 
-        surfel_ellipse.id = marker_id++;
+    //     surfel_ellipse.id = marker_id++;
         
-        // position
-        const Eigen::Vector3f& m = surfel.mean();
-        surfel_ellipse.pose.position.x = m.x();
-        surfel_ellipse.pose.position.y = m.y();
-        surfel_ellipse.pose.position.z = m.z();
+    //     // position
+    //     const Eigen::Vector3f& m = surfel.mean();
+    //     surfel_ellipse.pose.position.x = m.x();
+    //     surfel_ellipse.pose.position.y = m.y();
+    //     surfel_ellipse.pose.position.z = m.z();
 
-        const Eigen::Matrix3f& C = surfel.eigenvectors();
-        const Eigen::Vector3f& ev1 = C.col(1);
-        const Eigen::Vector3f& ev2 = C.col(2);
-        Eigen::Matrix3f R;
-        R.col(0) = ev1;
-        R.col(1) = ev2;
-        R.col(2) = surfel.normal();
-        if (R.determinant() < 0) {
-            R.col(1) = -R.col(1);
-        }
+    //     const Eigen::Matrix3f& C = surfel.eigenvectors();
+    //     const Eigen::Vector3f& ev1 = C.col(1);
+    //     const Eigen::Vector3f& ev2 = C.col(2);
+    //     Eigen::Matrix3f R;
+    //     R.col(0) = ev1;
+    //     R.col(1) = ev2;
+    //     R.col(2) = surfel.normal();
+    //     if (R.determinant() < 0) {
+    //         R.col(1) = -R.col(1);
+    //     }
 
-        Eigen::Quaternionf q(R);
-        q.normalize();
+    //     Eigen::Quaternionf q(R);
+    //     q.normalize();
 
-        // orientation
-        surfel_ellipse.pose.orientation.x = q.x();
-        surfel_ellipse.pose.orientation.y = q.y();
-        surfel_ellipse.pose.orientation.z = q.z();
-        surfel_ellipse.pose.orientation.w = q.w();
+    //     // orientation
+    //     surfel_ellipse.pose.orientation.x = q.x();
+    //     surfel_ellipse.pose.orientation.y = q.y();
+    //     surfel_ellipse.pose.orientation.z = q.z();
+    //     surfel_ellipse.pose.orientation.w = q.w();
 
-        // scale
-        const Eigen::Vector3f& evals = surfel.eigenvalues();
-        surfel_ellipse.scale.x = 2.0f * std::sqrt(std::max(evals(1), 1e-6f));
-        surfel_ellipse.scale.y = 2.0f * std::sqrt(std::max(evals(2), 1e-6f));
-        surfel_ellipse.scale.z = 0.005f;
+    //     // scale
+    //     const Eigen::Vector3f& evals = surfel.eigenvalues();
+    //     surfel_ellipse.scale.x = 2.0f * std::sqrt(std::max(evals(1), 1e-6f));
+    //     surfel_ellipse.scale.y = 2.0f * std::sqrt(std::max(evals(2), 1e-6f));
+    //     surfel_ellipse.scale.z = 0.005f;
 
-        // color
-        surfel_ellipse.color.r = (surfel.normal().x() + 1.0f) * 0.5f;
-        surfel_ellipse.color.g = (surfel.normal().y() + 1.0f) * 0.5f;
-        surfel_ellipse.color.b = (surfel.normal().z() + 1.0f) * 0.5f;
-        surfel_ellipse.color.a = 0.8f;
+    //     // color
+    //     surfel_ellipse.color.r = (surfel.normal().x() + 1.0f) * 0.5f;
+    //     surfel_ellipse.color.g = (surfel.normal().y() + 1.0f) * 0.5f;
+    //     surfel_ellipse.color.b = (surfel.normal().z() + 1.0f) * 0.5f;
+    //     surfel_ellipse.color.a = 0.8f;
 
-        marker_array.markers.push_back(surfel_ellipse);
+    //     marker_array.markers.push_back(surfel_ellipse);
+    // }
+
+    // Bounding box wireframe
+    Eigen::AlignedBox3f bounds = surfel_map_->voxels().get_bounds();
+    if (!bounds.isEmpty()) {
+        visualization_msgs::msg::Marker bbox;
+        bbox.header.frame_id = global_frame_;
+        bbox.header.stamp = viz_now;
+        bbox.ns = "map_bounds";
+        bbox.id = 0;
+        bbox.type = visualization_msgs::msg::Marker::LINE_LIST;
+        bbox.action = visualization_msgs::msg::Marker::ADD;
+        bbox.pose.orientation.w = 1.0;
+        bbox.scale.x = 0.03; // line width
+
+        bbox.color.r = 1.0f;
+        bbox.color.g = 1.0f;
+        bbox.color.b = 1.0f;
+        bbox.color.a = 0.6f;
+
+        const Eigen::Vector3f lo = bounds.min();
+        const Eigen::Vector3f hi = bounds.max();
+
+        // 8 corners
+        auto pt = [](float x, float y, float z) {
+            geometry_msgs::msg::Point p;
+            p.x = x; p.y = y; p.z = z;
+            return p;
+        };
+
+        // 12 edges (each edge = 2 points)
+        // bottom face
+        bbox.points.push_back(pt(lo.x(), lo.y(), lo.z())); bbox.points.push_back(pt(hi.x(), lo.y(), lo.z()));
+        bbox.points.push_back(pt(hi.x(), lo.y(), lo.z())); bbox.points.push_back(pt(hi.x(), hi.y(), lo.z()));
+        bbox.points.push_back(pt(hi.x(), hi.y(), lo.z())); bbox.points.push_back(pt(lo.x(), hi.y(), lo.z()));
+        bbox.points.push_back(pt(lo.x(), hi.y(), lo.z())); bbox.points.push_back(pt(lo.x(), lo.y(), lo.z()));
+        // top face
+        bbox.points.push_back(pt(lo.x(), lo.y(), hi.z())); bbox.points.push_back(pt(hi.x(), lo.y(), hi.z()));
+        bbox.points.push_back(pt(hi.x(), lo.y(), hi.z())); bbox.points.push_back(pt(hi.x(), hi.y(), hi.z()));
+        bbox.points.push_back(pt(hi.x(), hi.y(), hi.z())); bbox.points.push_back(pt(lo.x(), hi.y(), hi.z()));
+        bbox.points.push_back(pt(lo.x(), hi.y(), hi.z())); bbox.points.push_back(pt(lo.x(), lo.y(), hi.z()));
+        // vertical edges
+        bbox.points.push_back(pt(lo.x(), lo.y(), lo.z())); bbox.points.push_back(pt(lo.x(), lo.y(), hi.z()));
+        bbox.points.push_back(pt(hi.x(), lo.y(), lo.z())); bbox.points.push_back(pt(hi.x(), lo.y(), hi.z()));
+        bbox.points.push_back(pt(hi.x(), hi.y(), lo.z())); bbox.points.push_back(pt(hi.x(), hi.y(), hi.z()));
+        bbox.points.push_back(pt(lo.x(), hi.y(), lo.z())); bbox.points.push_back(pt(lo.x(), hi.y(), hi.z()));
+
+        marker_array.markers.push_back(bbox);
     }
 
-    surfel_marker_pub_->publish(marker_array);
+    map_bbox_pub_->publish(marker_array);
+
+    publish_coarse_map();
 }
 
 void SurfelMapNode::republish_cloud(const std::vector<PointWithNormal>& points, const rclcpp::Time& stamp) {
@@ -286,6 +335,57 @@ void SurfelMapNode::republish_cloud(const std::vector<PointWithNormal>& points, 
     }
 
     cloud_repub_->publish(cloud_msg);
+}
+
+void SurfelMapNode::publish_coarse_map() {
+    if (coarse_map_pub_->get_subscription_count() == 0) return;
+
+    const auto& coarse_map = surfel_map_->voxels().get_coarse_map();
+    if (coarse_map.empty()) return;
+
+    const float coarse_size = surfel_map_->voxel_size() * SpatialHash::COARSE_FACTOR;
+
+    sensor_msgs::msg::PointCloud2 cloud_msg;
+    cloud_msg.header.frame_id = global_frame_;
+    cloud_msg.header.stamp = this->get_clock()->now();
+    cloud_msg.height = 1;
+    cloud_msg.width = coarse_map.size();
+    cloud_msg.is_dense = true;
+    cloud_msg.is_bigendian = false;
+
+    sensor_msgs::PointCloud2Modifier modifier(cloud_msg);
+    modifier.setPointCloud2FieldsByString(2, "xyz", "rgb");
+
+    sensor_msgs::PointCloud2Iterator<float> iter_x(cloud_msg, "x");
+    sensor_msgs::PointCloud2Iterator<float> iter_y(cloud_msg, "y");
+    sensor_msgs::PointCloud2Iterator<float> iter_z(cloud_msg, "z");
+    sensor_msgs::PointCloud2Iterator<uint8_t> iter_r(cloud_msg, "r");
+    sensor_msgs::PointCloud2Iterator<uint8_t> iter_g(cloud_msg, "g");
+    sensor_msgs::PointCloud2Iterator<uint8_t> iter_b(cloud_msg, "b");
+
+    for (const auto& [key, state] : coarse_map) {
+        // coarse cell center
+        *iter_x = (static_cast<float>(key.x) + 0.5f) * coarse_size;
+        *iter_y = (static_cast<float>(key.y) + 0.5f) * coarse_size;
+        *iter_z = (static_cast<float>(key.z) + 0.5f) * coarse_size;
+
+        switch (state) {
+        case SpatialHash::CoarseCellState::FREE:
+            *iter_r = 0; *iter_g = 200; *iter_b = 0;       // green
+            break;
+        case SpatialHash::CoarseCellState::OCCUPIED:
+            *iter_r = 200; *iter_g = 0; *iter_b = 0;       // red
+            break;
+        default: // UNKNOWN
+            *iter_r = 128; *iter_g = 128; *iter_b = 128;   // grey
+            break;
+        }
+
+        ++iter_x; ++iter_y; ++iter_z;
+        ++iter_r; ++iter_g; ++iter_b;
+    }
+
+    coarse_map_pub_->publish(cloud_msg);
 }
 
 } // namespace

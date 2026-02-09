@@ -30,6 +30,7 @@ private:
     void pointcloud_callback(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
     void republish_cloud(const std::vector<PointWithNormal>& points, const rclcpp::Time& stamp);
     void publish_visualization();
+    void publish_coarse_map();
     bool get_transform(const rclcpp::Time& stamp, Eigen::Transform<float, 3, Eigen::Isometry>& tf);
 
     // map
@@ -42,7 +43,8 @@ private:
 
     // pubs
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr cloud_repub_;
-    rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr surfel_marker_pub_;
+    rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr map_bbox_pub_;
+    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr coarse_map_pub_;
 
     // subs
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr cloud_sub_;

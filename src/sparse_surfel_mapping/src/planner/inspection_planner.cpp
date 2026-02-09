@@ -32,7 +32,7 @@ void InspectionPlanner::initialize(SurfelMap* map) {
 void InspectionPlanner::update_pose(const Eigen::Vector3f& position, float yaw) {
     // Update current direction based on movement
     Eigen::Vector3f delta = position - current_position_;
-    if (delta.norm() > 0.01f) {
+    if (delta.norm() > 0.1f) {
         current_direction_ = delta.normalized();
     }
 

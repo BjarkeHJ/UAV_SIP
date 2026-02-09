@@ -24,6 +24,13 @@ ViewpointGenerator::ViewpointGenerator(const InspectionPlannerConfig& config)
 bool ViewpointGenerator::update_exploration_goal(const Eigen::Vector3f& current_position, const Eigen::Vector3f& current_direction) {
     if (!map_ || !coverage_tracker_) return false;
 
+    /*
+    What need to be done:
+    - Cluster frontiers
+    - For each cluster: A* star path in free space
+    */ 
+    
+
     // Get map frontiers
     VoxelKeySet map_frontiers = coverage_tracker_->map_frontiers();
     if (map_frontiers.empty()) {
@@ -44,7 +51,7 @@ bool ViewpointGenerator::update_exploration_goal(const Eigen::Vector3f& current_
     auto best_cluster = select_best_cluster(clusters, current_direction);
 
     // Update goal
-    current_goal_.position = best_cluster.centroid + config_.viewpoint.optimal_view_distance * best_cluster.avg_normal;
+    current_goal_.position = best_cluster.centroid + config_.viewpoint.max_view_distance * best_cluster.avg_normal;
     current_goal_.direction = (best_cluster.centroid - current_position).normalized();
     current_goal_.yaw = std::atan2(-best_cluster.avg_normal.y(), -best_cluster.avg_normal.x());
     current_goal_.last_centroid = best_cluster.centroid;
@@ -151,7 +158,7 @@ FrontierCluster ViewpointGenerator::select_best_cluster(const std::vector<Fronti
         float alignment_score = std::max(0.0f, alignment); // [0, 1]
 
         // Combined score (heavily favor alignment to stick to direction)
-        float score = size_score * 0.2f + distance_score * 0.3f + alignment_score * 0.5f;
+        float score = size_score * 0.2f + distance_score * 0.8f + alignment_score * 0.0f;
 
         if (score > best_score) {
             best_score = score;
@@ -192,12 +199,8 @@ std::deque<Viewpoint> ViewpointGenerator::generate_exploration_viewpoints(const 
 
     // Sample spheres along path
     const float overlap_ratio = 0.5f; // 30% overlap
-
-    const auto ts = std::chrono::high_resolution_clock::now();
     auto sphere_centers = sample_spheres_along_path(path_to_goal_, sphere_radius_, overlap_ratio);
-    const auto te = std::chrono::high_resolution_clock::now();
     std::cout << "Sphere Centers Size: " << sphere_centers.size() << std::endl;
-    std::cout << "Sphere center time: " << std::chrono::duration<double,std::milli>(te-ts).count() << " ms" << std::endl;
 
     // Generate viewpoints in each sphere
     int s = 0;

@@ -63,12 +63,14 @@ size_t SurfelMap::commit_update() {
     for (auto& [key, updates] : pending_updates_) {
         if (updates.empty()) continue;
         Voxel& voxel = spatial_hash_.get_or_create(key);
-        const bool was_valid = voxel.has_valid_surfel();
+        // const bool was_valid = voxel.has_valid_surfel();
+        const bool was_valid = voxel.is_occupied();
         voxel.integrate_points(updates);
         voxel.finalize_surfel();
         points_integrated += updates.size();
-        const bool is_valid = voxel.has_valid_surfel();
-
+        // const bool is_valid = voxel.has_valid_surfel();
+        const bool is_valid = voxel.is_occupied();
+    
         if (!was_valid && is_valid) {
             // surfel just became valid
             spatial_hash_.on_surfel_added(key);

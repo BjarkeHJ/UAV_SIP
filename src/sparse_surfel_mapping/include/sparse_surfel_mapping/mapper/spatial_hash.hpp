@@ -55,6 +55,7 @@ public:
     size_t bucket_count() const { return voxels_.bucket_count(); } // number of buckets in hash table
     float load_factor() const { return voxels_.load_factor(); } // current load factor
     MapStatistics compute_statistics() const;
+    Eigen::AlignedBox3f get_bounds() const;
 
     // Neighbor queries
     std::vector<std::reference_wrapper<const Voxel>> get_neighbors_6(const VoxelKey& key) const;
@@ -84,6 +85,7 @@ public:
         size_t num_frontiers{0};
     };
     CoarseGridStats get_coarse_grid_stats() const;
+    const std::unordered_map<VoxelKey, CoarseCellState, VoxelKeyHash>& get_coarse_map() const { return coarse_state_; }
 
 private:
     void mark_coarse_free(const VoxelKey& coarse_key);
@@ -93,8 +95,13 @@ private:
     float voxel_size_; // voxel size (map resolution)
     SurfelConfig surfel_config_; // surfel config
 
+    // bounds cache (mutable for lazy recompute in const get_bounds)
+    mutable Eigen::AlignedBox3f bounds_cache_;
+    mutable bool bounds_dirty_{true};
+    void recompute_bounds() const;
+
     // coarse grid
-    std::unordered_map<VoxelKey, CoarseCellState, VoxelKeyHash> coarse_state_; // cell key -> state 
+    std::unordered_map<VoxelKey, CoarseCellState, VoxelKeyHash> coarse_state_; // cell key -> state
     std::unordered_map<VoxelKey, size_t, VoxelKeyHash> coarse_surfel_counts_; // cell key -> number of valid fine-level surfels
 };
 

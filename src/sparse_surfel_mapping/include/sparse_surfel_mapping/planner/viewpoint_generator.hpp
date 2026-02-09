@@ -2,7 +2,6 @@
 #define VIEWPOINT_GENERATOR_HPP_
 
 #include <chrono>
-
 #include <queue>
 #include <deque>
 

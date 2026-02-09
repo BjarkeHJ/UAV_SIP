@@ -75,9 +75,7 @@ Eigen::Vector3f AStarPlanner::coarse_key_to_position(const VoxelKey& coarse_key)
 
 std::vector<Eigen::Vector3f> AStarPlanner::plan(const Eigen::Vector3f& start, const Eigen::Vector3f& goal) {
     if (!map_) return {};
-
-    auto t_start = std::chrono::high_resolution_clock::now();
-
+    
     const auto& voxels = map_->voxels();
 
     // Convert to coarse keys
@@ -148,13 +146,7 @@ std::vector<Eigen::Vector3f> AStarPlanner::plan(const Eigen::Vector3f& start, co
                 waypoints.push_back(coarse_key_to_position(key));
             }
 
-            auto t_end = std::chrono::high_resolution_clock::now();
-            std::cout << "[A*] Path found: " << waypoints.size() << " waypoints | "
-                      << "Expanded: " << nodes_expanded << " nodes | "
-                      << "Time: " << std::chrono::duration<double, std::milli>(t_end - t_start).count()
-                      << " ms" << std::endl;
-
-            return waypoints;
+            return waypoints; // only exits if path to goal is found -> SHOULD allow partial paths (with multi-cluster path gen)
         }
 
         // Already processed?
@@ -212,10 +204,6 @@ std::vector<Eigen::Vector3f> AStarPlanner::plan(const Eigen::Vector3f& start, co
     }
 
     // No path found
-    auto t_end = std::chrono::high_resolution_clock::now();
-    std::cout << "[A*] No path found | Expanded: " << nodes_expanded << " nodes | "
-              << "Time: " << std::chrono::duration<double, std::milli>(t_end - t_start).count()
-              << " ms" << std::endl;
 
     return {};
 }

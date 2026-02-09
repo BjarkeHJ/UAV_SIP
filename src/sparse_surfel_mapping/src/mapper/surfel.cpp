@@ -97,10 +97,10 @@ void Surfel::update_validity() {
     if (effective_samples() < 5.0f) return;
 
     // Reject very large eigenvalues 
-    if (eigenvalues_(2) > 2.0f * config_.voxel_size * config_.voxel_size) return;
+    // if (eigenvalues_(2) > 2.0f * config_.voxel_size * config_.voxel_size) return;
 
     // Gate degeneracy
-    if (eigenvalues_(1) < config_.degeneracy_threshold * eigenvalues_(2)) return;
+    // if (eigenvalues_(1) < config_.degeneracy_threshold * eigenvalues_(2)) return;
 
     is_valid_ = true;
 }

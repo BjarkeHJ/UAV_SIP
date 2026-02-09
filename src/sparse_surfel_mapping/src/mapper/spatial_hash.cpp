@@ -25,6 +25,11 @@ Voxel& SpatialHash::get_or_create(const VoxelKey& key) {
 
     // create new
     auto result = voxels_.emplace(key, Voxel(key, surfel_config_));
+
+    // Update structure bounding box
+    if (!bounds_dirty_) {
+        bounds_cache_.extend(key_to_point(key));
+    }
     return result.first->second;
 }
 
@@ -49,7 +54,9 @@ bool SpatialHash::contains(const VoxelKey& key) const {
 }
 
 bool SpatialHash::remove(const VoxelKey& key) {
-    return voxels_.erase(key) > 0;
+    bool removed = voxels_.erase(key) > 0;
+    if (removed) bounds_dirty_ = true;
+    return removed;
 }
 
 // Coordinate convert
@@ -100,6 +107,7 @@ std::vector<VoxelKey> SpatialHash::get_valid_surfel_keys() const {
 // bulk ops
 void SpatialHash::clear() {
     voxels_.clear();
+    bounds_dirty_ = true;
 }
 
 void SpatialHash::reserve(size_t count) {
@@ -120,6 +128,7 @@ size_t SpatialHash::prune_invalid() {
         }
     }
 
+    if (removed > 0) bounds_dirty_ = true;
     return removed;
 }
 
@@ -141,6 +150,7 @@ size_t SpatialHash::prune_outside_bounds(const Eigen::Vector3f& min_bound, const
         }
     }
 
+    if (removed > 0) bounds_dirty_ = true;
     return removed;
 }
 
@@ -165,6 +175,19 @@ MapStatistics SpatialHash::compute_statistics() const {
     }
 
     return stats;
+}
+
+Eigen::AlignedBox3f SpatialHash::get_bounds() const {
+    if (bounds_dirty_) recompute_bounds();
+    return bounds_cache_;
+}
+
+void SpatialHash::recompute_bounds() const {
+    bounds_cache_.setEmpty();
+    for (const auto& [key, voxel] : voxels_) {
+        bounds_cache_.extend(key_to_point(key));
+    }
+    bounds_dirty_ = false;
 }
 
 // Neighbor queries
@@ -239,8 +262,7 @@ std::vector<std::reference_wrapper<const Voxel>> SpatialHash::get_neighbors_in_r
     return result;
 }
 
-
-// Coarse grid
+// Multiresolution: Coarse grid
 VoxelKey SpatialHash::fine_to_coarse(const VoxelKey& fine) const {
     auto floor_div = [](int32_t a, int32_t b) -> int32_t {
         int32_t d = a / b;
@@ -305,29 +327,37 @@ void SpatialHash::trace_ray(const Eigen::Vector3f& from, const Eigen::Vector3f& 
     if (l < 1e-6f) return;
     dir /= l;
 
-    const float step = coarse_size * 0.5f;
+    // const float step = coarse_size * 0.1f;
+    const float step = voxel_size_ * 0.1f;
     VoxelKey prev_coarse{INT32_MAX, INT32_MAX, INT32_MAX};
     VoxelKey end_coarse = fine_to_coarse(point_to_key(to));
+    VoxelKey sensor_coarse = fine_to_coarse(point_to_key(from));
 
     bool hit = false;
 
     for (float t = 0; t < l; t += step) {
         Eigen::Vector3f pos = from + dir * t;
+        if (pos.z() < 0.0f) break;
+
         VoxelKey coarse = fine_to_coarse(point_to_key(pos));
 
         if (coarse != prev_coarse) {
-            if (coarse_cell_state(coarse) == CoarseCellState::OCCUPIED) {
-                mark_coarse_occupied(coarse);
+            if (coarse != sensor_coarse && coarse_cell_state(coarse) == CoarseCellState::OCCUPIED) {
                 hit = true;
+                prev_coarse = coarse;
                 continue;
             }
 
             if (coarse == end_coarse) break; // dont change the last 
 
             if (hit) {
+                if (coarse_cell_state(coarse) == CoarseCellState::FREE) {
+                    prev_coarse = coarse;
+                    continue;
+                }
                 coarse_state_.erase(coarse); // mark UNKNOWN after occulision
                 coarse_surfel_counts_.erase(coarse);
-                hit = false;
+                // hit = false;
             }
             else {
                 mark_coarse_free(coarse);
@@ -348,7 +378,7 @@ void SpatialHash::observe_frustum(const Eigen::Vector3f& sensor_pos, float yaw, 
     const Eigen::Vector3f up = Eigen::Vector3f::UnitZ();
 
     const float tan_half_h = std::tan(hfov_deg * 0.5f * M_PI / 180.0f);
-    const float tan_half_v = std::tan(vfov_deg * 0.5 * M_PI / 180.0f);
+    const float tan_half_v = std::tan(vfov_deg * 0.5f * M_PI / 180.0f);
 
     const float far_half_width = max_range * tan_half_h;
     const float far_half_height = max_range * tan_half_v;
