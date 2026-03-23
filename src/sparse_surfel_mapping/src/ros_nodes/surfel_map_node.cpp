@@ -70,7 +70,7 @@ void SurfelMapNode::declare_parameters() {
     this->declare_parameter("max_depth_jump_m", 0.1);
 
     // Map
-    this->declare_parameter("voxel_size", 0.1);
+    this->declare_parameter("voxel_size", 0.15);
     this->declare_parameter("initial_bucket_count", 10000);
 
     // Surfel
@@ -135,6 +135,7 @@ SurfelMapConfig SurfelMapNode::load_configuration() {
 void SurfelMapNode::pointcloud_callback(const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
     // Capture transform 
     Eigen::Transform<float, 3, Eigen::Isometry> tf;
+
     if (!get_transform(msg->header.stamp, tf)) {
         RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
             "Failed to get transform from %s to %s",
